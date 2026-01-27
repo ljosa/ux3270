@@ -6,11 +6,13 @@ This module provides pre-built dialog patterns:
 - Form: Data entry form with automatic field layout
 - Table: Tabular data display with pagination
 - SelectionList: F4=Prompt selection list for field lookups
+- MessagePanel: Information/error message display
 """
 
 from .menu import Menu
 from .form import Form
 from .table import Table
 from .selection_list import SelectionList
+from .message import MessagePanel, show_message
 
-__all__ = ["Menu", "Form", "Table", "SelectionList"]
+__all__ = ["Menu", "Form", "Table", "SelectionList", "MessagePanel", "show_message"]
