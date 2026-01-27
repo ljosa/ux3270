@@ -25,16 +25,28 @@ uv venv && uv pip install -e .
 ## Quick Start
 
 ```python
-from ux3270.panel import Screen, Field, FieldType
-from ux3270.dialog import Menu, Form, Table
+from ux3270.dialog import Menu, Form, Table, SelectionList, show_message
 
-# Create a form
-form = Form("DATA ENTRY")
-form.add_field("Name", length=30, required=True)
+# Create a form with help text
+form = Form("DATA ENTRY", help_text="Enter your information")
+form.add_field("Name", length=30, required=True,
+               help_text="Your full name")
 form.add_field("Email", length=40)
-result = form.show()
-if result:  # None if user cancelled with F3
+result = form.show()  # F1 for help, F3 to cancel
+if result:
     print(f"Hello, {result['Name']}!")
+
+# Form with F4=Prompt lookup
+def select_dept():
+    sel = SelectionList("SELECT DEPARTMENT", ["Code", "Name"])
+    sel.add_row(Code="ENG", Name="Engineering")
+    sel.add_row(Code="SAL", Name="Sales")
+    selected = sel.show()
+    return selected["Code"] if selected else None
+
+form = Form("ASSIGNMENT")
+form.add_field("Department", prompt=select_dept)  # F4 shows list
+result = form.show()
 
 # Create a menu
 menu = Menu("MAIN MENU")
@@ -47,6 +59,9 @@ table = Table("RESULTS", ["ID", "Name", "Status"])
 table.add_row("001", "Item 1", "Active")
 table.add_row("002", "Item 2", "Inactive")
 table.show()  # F7/F8 to page up/down
+
+# Show a message
+show_message("Operation completed", msg_type="success")
 ```
 
 ## Demo App
@@ -68,15 +83,23 @@ inventory-app --help
 
 | Context | Key | Action |
 |---------|-----|--------|
+| All | F1 | Help |
+| All | F3 | Cancel/Exit |
 | Forms | Tab | Next field |
 | Forms | Shift+Tab | Previous field |
 | Forms | Enter | Submit |
-| Forms | F3 | Cancel |
+| Forms | F4 | Prompt (show selection list) |
+| Fields | Left/Right | Move cursor |
+| Fields | Home/End | Start/end of field |
+| Fields | Delete | Delete at cursor |
+| Fields | Backspace | Delete before cursor |
+| Fields | Insert | Toggle insert/overwrite mode |
+| Fields | Ctrl+E | Erase to end of field |
 | Menus | 1-9, A-Z | Select item |
-| Menus | F3, X | Exit |
-| Tables | F7 | Page up |
-| Tables | F8 | Page down |
-| Tables | F3, Enter | Return |
+| Tables/Lists | F7 | Page backward |
+| Tables/Lists | F8 | Page forward |
+| Tables | Enter | Return |
+| Selection Lists | S | Select item |
 
 ## IBM 3270 Colors
 
