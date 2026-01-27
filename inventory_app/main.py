@@ -5,7 +5,7 @@ import sys
 from typing import Optional
 from ux3270 import FieldType
 from ux3270_ui import Menu, Form, Table
-from database import InventoryDB
+from .database import InventoryDB
 
 
 class InventoryApp:
