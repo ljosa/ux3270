@@ -8,12 +8,18 @@ Create terminal applications with an IBM 3270-style interaction model: display a
 
 ## Installation
 
-```bash
-# With uv (recommended)
-uv pip install -e .
+As a dependency in your project:
 
-# Or with pip
-pip install -e .
+```bash
+uv add git+https://github.com/ljosa/ux3270.git
+```
+
+For development of ux3270 itself:
+
+```bash
+git clone https://github.com/ljosa/ux3270.git
+cd ux3270
+uv venv && uv pip install -e .
 ```
 
 ## Quick Start
