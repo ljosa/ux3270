@@ -105,7 +105,7 @@ class Screen:
         except Exception:
             return 80  # IBM 3270 Model 2 standard
 
-    def render(self, in_command_line: bool = False):
+    def render(self, in_command_line: bool = False, current_field: "Field" = None):
         """Render the screen with all fields and text following CUA layout.
 
         CUA Layout (adapted for variable height):
@@ -119,6 +119,7 @@ class Screen:
 
         Args:
             in_command_line: Whether cursor is in command line (for display)
+            current_field: Current field (for context-sensitive function keys)
         """
         self.clear()
         height = self.get_screen_height()
@@ -191,14 +192,14 @@ class Screen:
         self.move_cursor(height - 2, 0)
         print(Colors.dim("─" * width), end="", flush=True)
 
-        # Function keys (height-1) - CUA standard
+        # Function keys (height-1) - CUA standard, context-sensitive
         self.move_cursor(height - 1, 0)
-        print(
-            f"{Colors.info('F1=Help')}  "
-            f"{Colors.info('F3=Cancel')}  "
-            f"{Colors.info('Enter=Submit')}",
-            end="", flush=True
-        )
+        fkeys = [Colors.info('F1=Help')]
+        if current_field and current_field.prompt:
+            fkeys.append(Colors.info('F4=Prompt'))
+        fkeys.append(Colors.info('F3=Cancel'))
+        fkeys.append(Colors.info('Enter=Submit'))
+        print("  ".join(fkeys), end="", flush=True)
 
     def _show_help(self, field: Field):
         """
@@ -280,6 +281,7 @@ class Screen:
         - Backspace: delete character before cursor
         - Ctrl+E or Shift+End: Erase EOF (clear to end of field)
         - F1: Show help for the current field
+        - F4: Prompt (request selection list)
 
         Args:
             field: Field to get input for
@@ -356,6 +358,11 @@ class Screen:
                             elif seq3 == '3':
                                 sys.stdin.read(1)  # Read the ~
                                 return "CANCEL"  # F3
+                            elif seq3 == '4':
+                                sys.stdin.read(1)  # Read the ~
+                                # F4 - Prompt (selection list)
+                                field.value = value
+                                return "PROMPT"
                             elif seq3 == ';':
                                 # Could be Shift+End (ESC [ 1 ; 2 F)
                                 seq4 = sys.stdin.read(1)
@@ -385,6 +392,9 @@ class Screen:
                             tty.setraw(fd)
                         elif seq2 == 'R':  # F3
                             return "CANCEL"
+                        elif seq2 == 'S':  # F4
+                            field.value = value
+                            return "PROMPT"
                         elif seq2 == 'H':  # Home (alternate)
                             cursor_pos = 0
                         elif seq2 == 'F':  # End (alternate)
@@ -547,12 +557,12 @@ class Screen:
 
         try:
             while True:
-                self.render(in_command_line=in_command_line)
+                current_field = self.fields[current_field_idx] if not in_command_line else None
+                self.render(in_command_line=in_command_line, current_field=current_field)
 
                 if in_command_line:
                     action = self._get_command_input()
                 else:
-                    current_field = self.fields[current_field_idx]
                     action = self.get_input(current_field)
 
                 if action == "NEXT":
@@ -601,6 +611,16 @@ class Screen:
                     # F3 = Cancel/Return (IBM standard)
                     self.clear()
                     return None
+
+                elif action == "PROMPT":
+                    # F4 = Prompt (selection list)
+                    current_field = self.fields[current_field_idx]
+                    if current_field.prompt:
+                        # Call the prompt callback
+                        result = current_field.prompt()
+                        if result is not None:
+                            # Set field value to the result
+                            current_field.value = str(result)
 
                 elif action == "SUBMIT":
                     # Check for CUA command line commands

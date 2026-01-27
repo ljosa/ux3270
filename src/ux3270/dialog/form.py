@@ -48,7 +48,8 @@ class Form:
         default: str = "",
         required: bool = False,
         validator: Optional[Callable[[str], bool]] = None,
-        help_text: str = ""
+        help_text: str = "",
+        prompt: Optional[Callable[[], str]] = None
     ) -> "Form":
         """
         Add a field to the form.
@@ -61,6 +62,8 @@ class Form:
             required: Whether field is required
             validator: Optional validation function
             help_text: Help text shown when F1 is pressed on this field
+            prompt: Optional F4=Prompt callback; should return selected value
+                   as string, or None if cancelled
 
         Returns:
             Self for method chaining
@@ -74,7 +77,8 @@ class Form:
             default=default,
             required=required,
             validator=validator,
-            help_text=help_text
+            help_text=help_text,
+            prompt=prompt
         )
         self.screen.add_field(field)
         self.current_row += 2  # Add spacing between fields

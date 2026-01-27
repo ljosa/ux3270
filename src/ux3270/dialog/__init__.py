@@ -5,10 +5,12 @@ This module provides pre-built dialog patterns:
 - Menu: Selection menu with single-key navigation
 - Form: Data entry form with automatic field layout
 - Table: Tabular data display with pagination
+- SelectionList: F4=Prompt selection list for field lookups
 """
 
 from .menu import Menu
 from .form import Form
 from .table import Table
+from .selection_list import SelectionList
 
-__all__ = ["Menu", "Form", "Table"]
+__all__ = ["Menu", "Form", "Table", "SelectionList"]

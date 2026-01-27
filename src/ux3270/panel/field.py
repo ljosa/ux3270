@@ -30,7 +30,8 @@ class Field:
         default: str = "",
         required: bool = False,
         validator: Optional[Callable[[str], bool]] = None,
-        help_text: str = ""
+        help_text: str = "",
+        prompt: Optional[Callable[[], Any]] = None
     ):
         """
         Initialize a field.
@@ -45,6 +46,8 @@ class Field:
             required: Whether the field is required
             validator: Optional validation function
             help_text: Help text shown when F1 is pressed on this field
+            prompt: Optional callback for F4=Prompt; should return selected value
+                   as string, or None if cancelled
         """
         self.row = row
         self.col = col
@@ -55,6 +58,7 @@ class Field:
         self.required = required
         self.validator = validator
         self.help_text = help_text
+        self.prompt = prompt
         self._value = default
         
     @property

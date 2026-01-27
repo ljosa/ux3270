@@ -5,7 +5,7 @@ import argparse
 import random
 
 from ux3270.panel import FieldType, Colors
-from ux3270.dialog import Menu, Form, Table
+from ux3270.dialog import Menu, Form, Table, SelectionList
 from .database import InventoryDB
 
 
@@ -122,6 +122,38 @@ class InventoryApp:
 
         input()
 
+    def _select_item(self) -> str:
+        """
+        Show item selection list for F4=Prompt.
+
+        Returns:
+            Selected item's SKU, or None if cancelled
+        """
+        items = self.db.list_items()
+        if not items:
+            return None
+
+        selection = SelectionList(
+            "SELECT ITEM",
+            columns=["ID", "SKU", "Name", "Qty", "Location"],
+            panel_id="INV099",
+            instruction="Type S to select, Enter to confirm, F3 to cancel"
+        )
+
+        for item in items:
+            selection.add_row(
+                ID=str(item["id"]),
+                SKU=item["sku"],
+                Name=item["name"][:25],
+                Qty=str(item["quantity"]),
+                Location=item["location"][:15]
+            )
+
+        selected = selection.show()
+        if selected:
+            return selected["SKU"]
+        return None
+
     def add_item(self):
         """Add a new item to inventory."""
         form = Form("ADD NEW ITEM", panel_id="INV001",
@@ -225,10 +257,11 @@ class InventoryApp:
         """Update an existing item."""
         # First, get the item ID
         form = Form("UPDATE ITEM - SELECT", panel_id="INV003",
-                   help_text="Enter item ID or SKU to update.",
+                   help_text="Enter item ID or SKU, or press F4 for list.",
                    )
         form.add_field("Item ID or SKU", length=20, required=True,
-                      help_text="Enter the numeric ID or SKU code of the item to update")
+                      help_text="Enter ID or SKU, or press F4 to select from list",
+                      prompt=self._select_item)
         result = form.show()
         if result is None:
             return  # User cancelled with F3
@@ -291,10 +324,11 @@ class InventoryApp:
     def delete_item(self):
         """Delete an item from inventory."""
         form = Form("DELETE ITEM", panel_id="INV004",
-                   help_text="Enter item to delete. You will be asked to confirm.",
+                   help_text="Enter item ID or SKU, or press F4 for list.",
                    )
         form.add_field("Item ID or SKU", length=20, required=True,
-                      help_text="Enter the numeric ID or SKU code of the item to delete")
+                      prompt=self._select_item,
+                      help_text="Enter ID or SKU, or press F4 to select from list")
         result = form.show()
         if result is None:
             return  # User cancelled with F3
@@ -341,10 +375,11 @@ class InventoryApp:
     def adjust_quantity(self):
         """Adjust the quantity of an item."""
         form = Form("ADJUST QUANTITY", panel_id="INV005",
-                   help_text="Enter item to adjust stock quantity.",
+                   help_text="Enter item ID or SKU, or press F4 for list.",
                    )
         form.add_field("Item ID or SKU", length=20, required=True,
-                      help_text="Enter the numeric ID or SKU code of the item")
+                      prompt=self._select_item,
+                      help_text="Enter ID or SKU, or press F4 to select from list")
         result = form.show()
         if result is None:
             return  # User cancelled with F3
