@@ -205,6 +205,20 @@ class InventoryDB:
         """, (search_pattern, search_pattern, search_pattern))
         return [dict(row) for row in cursor.fetchall()]
         
+    def clear_all(self) -> int:
+        """
+        Delete all items from the database.
+
+        Returns:
+            Number of items deleted
+        """
+        cursor = self.conn.cursor()
+        cursor.execute("SELECT COUNT(*) FROM items")
+        count = cursor.fetchone()[0]
+        cursor.execute("DELETE FROM items")
+        self.conn.commit()
+        return count
+
     def close(self):
         """Close database connection."""
         self.conn.close()

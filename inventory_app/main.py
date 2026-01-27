@@ -1,9 +1,53 @@
 #!/usr/bin/env python3
 """Inventory Management System using IBM 3270-like UI."""
 
+import argparse
+import random
+
 from ux3270 import FieldType, Colors
 from ux3270_ui import Menu, Form, Table
 from .database import InventoryDB
+
+
+# Sample data for demo purposes
+SAMPLE_DATA = [
+    # Electronics
+    ("ELEC-001", "Wireless Mouse", "Ergonomic wireless mouse, 2.4GHz", 45, 29.99, "Warehouse A-1"),
+    ("ELEC-002", "USB-C Hub", "7-port USB-C hub with HDMI", 32, 49.99, "Warehouse A-1"),
+    ("ELEC-003", "Mechanical Keyboard", "RGB mechanical keyboard, blue switches", 18, 89.99, "Warehouse A-2"),
+    ("ELEC-004", "Webcam HD", "1080p HD webcam with microphone", 67, 59.99, "Warehouse A-2"),
+    ("ELEC-005", "Monitor Stand", "Adjustable monitor stand, dual arm", 23, 79.99, "Warehouse A-3"),
+    ("ELEC-006", "Power Strip", "6-outlet surge protector", 120, 19.99, "Warehouse B-1"),
+    ("ELEC-007", "HDMI Cable 6ft", "High-speed HDMI 2.1 cable", 200, 12.99, "Warehouse B-1"),
+    ("ELEC-008", "Laptop Stand", "Aluminum laptop stand, foldable", 55, 34.99, "Warehouse A-3"),
+    # Office Supplies
+    ("OFFC-001", "Stapler", "Heavy-duty desktop stapler", 89, 15.99, "Warehouse C-1"),
+    ("OFFC-002", "Paper Clips Box", "Box of 1000 paper clips", 150, 4.99, "Warehouse C-1"),
+    ("OFFC-003", "Sticky Notes", "3x3 inch sticky notes, 12 pack", 200, 8.99, "Warehouse C-1"),
+    ("OFFC-004", "Ballpoint Pens", "Blue ballpoint pens, 24 pack", 175, 11.99, "Warehouse C-2"),
+    ("OFFC-005", "Notebook A4", "Spiral notebook, 100 pages", 300, 3.99, "Warehouse C-2"),
+    ("OFFC-006", "File Folders", "Manila file folders, 50 pack", 80, 14.99, "Warehouse C-3"),
+    ("OFFC-007", "Desk Organizer", "Mesh desk organizer, 5 compartments", 42, 24.99, "Warehouse C-3"),
+    ("OFFC-008", "Whiteboard Markers", "Dry erase markers, 8 colors", 95, 9.99, "Warehouse C-2"),
+    # Furniture
+    ("FURN-001", "Office Chair", "Ergonomic office chair, lumbar support", 15, 249.99, "Warehouse D-1"),
+    ("FURN-002", "Standing Desk", "Electric standing desk, 60 inch", 8, 449.99, "Warehouse D-1"),
+    ("FURN-003", "Bookshelf", "5-tier bookshelf, walnut finish", 12, 129.99, "Warehouse D-2"),
+    ("FURN-004", "Filing Cabinet", "3-drawer filing cabinet, lockable", 20, 179.99, "Warehouse D-2"),
+    ("FURN-005", "Desk Lamp", "LED desk lamp, adjustable brightness", 65, 39.99, "Warehouse D-3"),
+    # Breakroom
+    ("BRKR-001", "Coffee Maker", "12-cup programmable coffee maker", 10, 79.99, "Warehouse E-1"),
+    ("BRKR-002", "Paper Cups", "Disposable cups, 500 count", 40, 24.99, "Warehouse E-1"),
+    ("BRKR-003", "Water Cooler", "Bottom-loading water cooler", 5, 199.99, "Warehouse E-2"),
+    ("BRKR-004", "Microwave", "Countertop microwave, 1100W", 8, 89.99, "Warehouse E-2"),
+    ("BRKR-005", "Mini Fridge", "Compact refrigerator, 3.2 cu ft", 6, 149.99, "Warehouse E-2"),
+    # Safety
+    ("SAFE-001", "First Aid Kit", "100-piece first aid kit", 25, 29.99, "Warehouse F-1"),
+    ("SAFE-002", "Fire Extinguisher", "ABC fire extinguisher, 5 lb", 30, 49.99, "Warehouse F-1"),
+    ("SAFE-003", "Safety Glasses", "Clear safety glasses, 12 pack", 60, 34.99, "Warehouse F-2"),
+    ("SAFE-004", "Hard Hat", "OSHA-compliant hard hat, white", 40, 19.99, "Warehouse F-2"),
+    ("SAFE-005", "Safety Vest", "High-visibility safety vest", 75, 12.99, "Warehouse F-2"),
+]
 
 
 class InventoryApp:
@@ -275,9 +319,97 @@ class InventoryApp:
         self._wait_for_enter()
 
 
+def load_sample_data(db: InventoryDB) -> int:
+    """Load sample data into the database.
+
+    Args:
+        db: Database instance
+
+    Returns:
+        Number of items loaded
+    """
+    count = 0
+    for sku, name, desc, qty, price, loc in SAMPLE_DATA:
+        # Skip if SKU already exists
+        if db.get_item_by_sku(sku):
+            continue
+        # Add some randomness to quantities for realism
+        qty_variance = random.randint(-5, 10)
+        actual_qty = max(0, qty + qty_variance)
+        db.add_item(sku, name, desc, actual_qty, price, loc)
+        count += 1
+    return count
+
+
+def clear_database(db: InventoryDB) -> int:
+    """Clear all items from the database.
+
+    Args:
+        db: Database instance
+
+    Returns:
+        Number of items deleted
+    """
+    return db.clear_all()
+
+
 def main():
     """Main entry point."""
-    app = InventoryApp()
+    parser = argparse.ArgumentParser(
+        description="Inventory Management System - IBM 3270-style UI",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  inventory-app                  Start the application
+  inventory-app --demo           Load sample data and start
+  inventory-app --load-sample    Load sample data (additive)
+  inventory-app --clear          Clear all data from database
+  inventory-app --clear --demo   Clear and reload sample data
+        """
+    )
+    parser.add_argument(
+        "--demo",
+        action="store_true",
+        help="Load sample data for demonstration"
+    )
+    parser.add_argument(
+        "--load-sample",
+        action="store_true",
+        help="Load sample data (additive, skips existing SKUs)"
+    )
+    parser.add_argument(
+        "--clear",
+        action="store_true",
+        help="Clear all data from the database"
+    )
+    parser.add_argument(
+        "--db",
+        default="inventory.db",
+        help="Path to database file (default: inventory.db)"
+    )
+
+    args = parser.parse_args()
+
+    # Handle --clear
+    if args.clear:
+        db = InventoryDB(args.db)
+        count = clear_database(db)
+        print(f"Cleared {count} items from database.")
+        db.close()
+        if not args.demo and not args.load_sample:
+            return
+
+    # Handle --demo or --load-sample
+    if args.demo or args.load_sample:
+        db = InventoryDB(args.db)
+        count = load_sample_data(db)
+        print(f"Loaded {count} sample items.")
+        db.close()
+        if not args.demo:
+            return
+
+    # Run the app
+    app = InventoryApp(args.db)
     app.run()
 
 
