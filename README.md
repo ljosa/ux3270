@@ -6,6 +6,15 @@ IBM 3270-like terminal UI library for Python.
 
 Create terminal applications with an IBM 3270-style interaction model: display a form, let the user fill it in, continue when they submit.
 
+## Screenshots
+
+The inventory management demo app showcases the library's capabilities:
+
+| Main Menu | Inventory List | Update Form |
+|:---------:|:--------------:|:-----------:|
+| ![Main Menu](docs/images/screenshot1.png) | ![Inventory List](docs/images/screenshot2.png) | ![Update Form](docs/images/screenshot3.png) |
+| Menu with single-key selection | Table with F7/F8 pagination | Form with required fields and F4=Prompt |
+
 ## Installation
 
 As a dependency in your project:
