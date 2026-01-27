@@ -2,7 +2,7 @@
 
 from typing import Dict, Any, Optional, Callable
 
-from ux3270 import Screen, Field, FieldType
+from ux3270.panel import Screen, Field, FieldType
 
 
 class Form:

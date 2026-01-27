@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Simple example demonstrating ux3270 and ux3270_ui libraries."""
+"""Simple example demonstrating the ux3270 library."""
 
-from ux3270 import Screen, Field, FieldType
-from ux3270_ui import Menu, Form, Table
+from ux3270.panel import Screen, Field, FieldType
+from ux3270.dialog import Menu, Form, Table
 
 
 def example_low_level():

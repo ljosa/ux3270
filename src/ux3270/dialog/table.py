@@ -5,7 +5,7 @@ import tty
 import termios
 from typing import List
 
-from ux3270.colors import Colors
+from ux3270.panel import Colors
 
 
 class Table:

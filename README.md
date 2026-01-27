@@ -25,8 +25,8 @@ uv venv && uv pip install -e .
 ## Quick Start
 
 ```python
-from ux3270 import Screen, Field, FieldType
-from ux3270_ui import Menu, Form, Table
+from ux3270.panel import Screen, Field, FieldType
+from ux3270.dialog import Menu, Form, Table
 
 # Create a form
 form = Form("DATA ENTRY")

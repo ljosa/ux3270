@@ -9,8 +9,8 @@ Run this on a real terminal to test the interactive functionality.
 import sys
 sys.path.insert(0, '.')
 
-from ux3270 import Screen, Field, FieldType
-from ux3270_ui import Menu, Form, Table
+from ux3270.panel import Screen, Field, FieldType
+from ux3270.dialog import Menu, Form, Table
 
 
 def test_table_display():
