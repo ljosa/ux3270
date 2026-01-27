@@ -1,9 +1,6 @@
 #!/usr/bin/env python3
 """Inventory Management System using IBM 3270-like UI."""
 
-import sys
-from typing import Optional
-
 from ux3270 import FieldType, Colors
 from ux3270_ui import Menu, Form, Table
 from .database import InventoryDB
@@ -50,6 +47,8 @@ class InventoryApp:
         form.add_field("Location", length=30)
 
         result = form.show()
+        if result is None:
+            return  # User cancelled with F3
 
         try:
             # Check if SKU already exists
@@ -63,8 +62,8 @@ class InventoryApp:
                 sku=result["SKU"],
                 name=result["Name"],
                 description=result.get("Description", ""),
-                quantity=int(result.get("Quantity", "0")),
-                unit_price=float(result.get("Unit Price", "0.0")),
+                quantity=int(result.get("Quantity", "0") or "0"),
+                unit_price=float(result.get("Unit Price", "0.0") or "0.0"),
                 location=result.get("Location", "")
             )
             print(Colors.success(f"ITEM ADDED - ID: {item_id}"))
@@ -102,8 +101,10 @@ class InventoryApp:
         form.add_field("Search Term", length=40, required=True)
 
         result = form.show()
-        search_term = result["Search Term"]
+        if result is None:
+            return  # User cancelled with F3
 
+        search_term = result["Search Term"]
         items = self.db.search_items(search_term)
 
         if not items:
@@ -132,6 +133,8 @@ class InventoryApp:
         form = Form("UPDATE ITEM - SELECT")
         form.add_field("Item ID or SKU", length=20, required=True)
         result = form.show()
+        if result is None:
+            return  # User cancelled with F3
 
         # Find the item
         item_id_or_sku = result["Item ID or SKU"]
@@ -161,6 +164,8 @@ class InventoryApp:
         update_form.add_field("Location", length=30, default=item["location"])
 
         result = update_form.show()
+        if result is None:
+            return  # User cancelled with F3
 
         try:
             self.db.update_item(
@@ -168,8 +173,8 @@ class InventoryApp:
                 sku=result["SKU"],
                 name=result["Name"],
                 description=result.get("Description", ""),
-                quantity=int(result.get("Quantity", "0")),
-                unit_price=float(result.get("Unit Price", "0.0")),
+                quantity=int(result.get("Quantity", "0") or "0"),
+                unit_price=float(result.get("Unit Price", "0.0") or "0.0"),
                 location=result.get("Location", "")
             )
             print(Colors.success("ITEM UPDATED"))
@@ -183,6 +188,8 @@ class InventoryApp:
         form = Form("DELETE ITEM")
         form.add_field("Item ID or SKU", length=20, required=True)
         result = form.show()
+        if result is None:
+            return  # User cancelled with F3
 
         # Find the item
         item_id_or_sku = result["Item ID or SKU"]
@@ -201,12 +208,14 @@ class InventoryApp:
             self._wait_for_enter()
             return
 
-        # Confirm deletion (IBM convention: Y/N, not YES/NO)
+        # Confirm deletion (IBM convention: Y/N)
         confirm_form = Form("CONFIRM DELETE")
         confirm_form.add_text(f"Item: {item['sku']} - {item['name']}")
         confirm_form.add_field("Delete? (Y/N)", length=1, required=True)
 
         confirm = confirm_form.show()
+        if confirm is None:
+            return  # User cancelled with F3
 
         if confirm["Delete? (Y/N)"].upper() == "Y":
             if self.db.delete_item(item["id"]):
@@ -223,6 +232,8 @@ class InventoryApp:
         form = Form("ADJUST QUANTITY")
         form.add_field("Item ID or SKU", length=20, required=True)
         result = form.show()
+        if result is None:
+            return  # User cancelled with F3
 
         # Find the item
         item_id_or_sku = result["Item ID or SKU"]
@@ -251,6 +262,8 @@ class InventoryApp:
                           required=True, default=str(item['quantity']))
 
         result = adj_form.show()
+        if result is None:
+            return  # User cancelled with F3
 
         try:
             new_qty = int(result["New Qty"])

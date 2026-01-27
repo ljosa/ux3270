@@ -80,8 +80,12 @@ class Field:
         return True, ""
         
     def render_label_col(self) -> int:
-        """Calculate the column position for the label."""
+        """Calculate the column position for the label.
+
+        IBM 3270 convention: Label: <space> [input field]
+        So we need room for: label text + colon + space
+        """
         if not self.label:
             return self.col
-        # Place label before the field with one space
-        return self.col - len(self.label) - 1
+        # Place label before the field: label + ": " (colon + space)
+        return self.col - len(self.label) - 2

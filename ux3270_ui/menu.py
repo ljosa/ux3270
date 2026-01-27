@@ -88,10 +88,11 @@ class Menu:
             print(f"  {key_display} {Colors.DEFAULT}-{Colors.RESET} {item.label}")
 
         # Move to bottom of screen for function key hints (IBM 3270 convention)
-        # Leave 2 lines at bottom: one for hints, one for messages
+        # Position on second-to-last line, leaving last line for messages
         print(f"\033[{height - 1};1H", end="")
-        print(Colors.dim("─" * 78))
-        print(Colors.info("F3=Exit") + "  " + Colors.dim("Enter selection number"))
+        print(Colors.dim("─" * 78), end="")
+        print(f"\033[{height};1H", end="")
+        print(Colors.info("F3=Exit") + "  " + Colors.dim("Enter selection number"), end="", flush=True)
 
     def _read_key(self, fd) -> str:
         """Read a key, handling escape sequences for function keys."""

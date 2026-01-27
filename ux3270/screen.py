@@ -109,9 +109,10 @@ class Screen:
         # Display fields with labels
         for field in self.fields:
             # Display label if present (protected/turquoise color per IBM convention)
+            # IBM 3270 layout: "Label: " with space before input field
             if field.label:
                 self.move_cursor(field.row, field.render_label_col())
-                print(f"{Colors.PROTECTED}{field.label}:{Colors.RESET}", end="", flush=True)
+                print(f"{Colors.PROTECTED}{field.label}:{Colors.RESET} ", end="", flush=True)
 
             # Display field value
             self.move_cursor(field.row, field.col)
@@ -135,14 +136,14 @@ class Screen:
             self.move_cursor(height - 3, 0)
             print(Colors.error(self.error_message), end="", flush=True)
 
-        # Display function key hints at bottom (IBM convention)
+        # Display function key hints at bottom (IBM 3270 convention)
         self.move_cursor(height - 2, 0)
-        print(Colors.dim("─" * min(78, width - 2)), flush=True)
+        print(Colors.dim("─" * min(78, width - 2)), end="", flush=True)
+        self.move_cursor(height - 1, 0)
         hints = (
+            f"{Colors.info('F3=Cancel')}  "
             f"{Colors.info('Enter=Submit')}  "
-            f"{Colors.info('Tab=Next')}  "
-            f"{Colors.info('Shift+Tab=Prev')}  "
-            f"{Colors.dim('Ctrl+C=Cancel')}"
+            f"{Colors.info('Tab=Next')}"
         )
         print(hints, end="", flush=True)
 
@@ -195,16 +196,27 @@ class Screen:
                     field.value = value
                     return "NEXT"
                 elif ch == '\x1b':  # Escape sequence
-                    seq = sys.stdin.read(2)
-                    if seq == '[Z':  # Shift+Tab
-                        field.value = value
-                        return "PREV"
+                    seq1 = sys.stdin.read(1)
+                    if seq1 == '[':
+                        seq2 = sys.stdin.read(1)
+                        if seq2 == 'Z':  # Shift+Tab
+                            field.value = value
+                            return "PREV"
+                        elif seq2 == '1':
+                            seq3 = sys.stdin.read(1)
+                            if seq3 == '3':
+                                sys.stdin.read(1)  # Read the ~
+                                return "CANCEL"  # F3
+                    elif seq1 == 'O':
+                        seq2 = sys.stdin.read(1)
+                        if seq2 == 'R':  # F3
+                            return "CANCEL"
                 elif ch == '\x7f' or ch == '\x08':  # Backspace
                     if cursor_pos > 0:
                         value = value[:cursor_pos-1] + value[cursor_pos:]
                         cursor_pos -= 1
-                elif ch == '\x03':  # Ctrl+C
-                    raise KeyboardInterrupt
+                elif ch == '\x03':  # Ctrl+C - also treat as cancel
+                    return "CANCEL"
                 elif ch.isprintable() and len(value) < field.length:
                     # Handle field type constraints
                     if field.field_type == FieldType.NUMERIC and not ch.isdigit():
@@ -280,6 +292,11 @@ class Screen:
                                self.fields[current_field_idx].field_type == FieldType.READONLY):
                             current_field_idx -= 1
 
+                elif action == "CANCEL":
+                    # F3 = Cancel/Return (IBM standard)
+                    self.clear()
+                    return None
+
                 elif action == "SUBMIT":
                     # Validate all fields
                     valid = True
@@ -295,9 +312,9 @@ class Screen:
                         return self._get_results()
 
         except KeyboardInterrupt:
+            # Ctrl+C during raw mode - treat as cancel
             self.clear()
-            print(Colors.info("***"))
-            sys.exit(0)
+            return None
 
     def _get_results(self) -> Dict[str, Any]:
         """Get results as a dictionary."""

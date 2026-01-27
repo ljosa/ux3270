@@ -113,10 +113,11 @@ class Table:
             count_msg = f"ROWS {len(self.rows)}"
             print(Colors.info(count_msg))
 
-        # Move to bottom of screen for function key hints
+        # Move to bottom of screen for function key hints (IBM 3270 convention)
         print(f"\033[{height - 1};1H", end="")
-        print(Colors.dim("─" * min(78, width - 2)))
-        print(Colors.info("F3=Return") + "  " + Colors.dim("Press Enter to continue"))
+        print(Colors.dim("─" * min(78, width - 2)), end="")
+        print(f"\033[{height};1H", end="")
+        print(Colors.info("F3=Return") + "  " + Colors.dim("Press Enter to continue"), end="", flush=True)
 
     def show(self):
         """Display the table and wait for user to press a key."""
