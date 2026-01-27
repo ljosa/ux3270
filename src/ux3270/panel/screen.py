@@ -25,14 +25,23 @@ class Screen:
     - Function key hints at bottom of screen
     """
 
-    def __init__(self, title: str = ""):
+    # CUA layout constants (0-indexed row offsets from edges)
+    TITLE_ROW = 0           # Row for panel ID and title
+    INSTRUCTION_ROW = 1     # Row for instruction text
+    BODY_START_ROW = 2      # First row of panel body
+
+    def __init__(self, title: str = "", panel_id: str = "", instruction: str = ""):
         """
         Initialize a screen.
 
         Args:
             title: Optional title to display at the top of the screen
+            panel_id: Optional panel identifier (shown at top-left per CUA)
+            instruction: Optional instruction text (shown on row 2 per CUA)
         """
         self.title = title.upper() if title else ""
+        self.panel_id = panel_id.upper() if panel_id else ""
+        self.instruction = instruction
         self.fields: List[Field] = []
         self.static_text: Dict[tuple[int, int], str] = {}
         self.error_message: str = ""
@@ -90,16 +99,34 @@ class Screen:
             return 80  # IBM 3270 Model 2 standard
 
     def render(self):
-        """Render the screen with all fields and text."""
+        """Render the screen with all fields and text following CUA layout.
+
+        CUA Layout (adapted for variable height):
+        - Row 0: Panel ID (left) + Title (centered)
+        - Row 1: Instruction line
+        - Rows 2 to height-4: Panel body (fields, static text)
+        - Row height-3: Message line
+        - Row height-2: Separator
+        - Row height-1: Function keys
+        """
         self.clear()
         height = self.get_screen_height()
         width = self.get_screen_width()
 
-        # Display title (IBM convention: intensified, at top)
+        # Row 0: Panel ID (left) and Title (centered) - CUA standard
+        self.move_cursor(self.TITLE_ROW, 0)
+        if self.panel_id:
+            print(f"{Colors.PROTECTED}{self.panel_id}{Colors.RESET}", end="", flush=True)
         if self.title:
-            self.move_cursor(0, 0)
-            title_display = f"═══ {self.title} ═══"
-            print(f"{Colors.title(title_display)}", flush=True)
+            # Center the title
+            title_col = max(0, (width - len(self.title)) // 2)
+            self.move_cursor(self.TITLE_ROW, title_col)
+            print(f"{Colors.title(self.title)}", end="", flush=True)
+
+        # Row 1: Instruction line - CUA standard
+        if self.instruction:
+            self.move_cursor(self.INSTRUCTION_ROW, 0)
+            print(f"{Colors.PROTECTED}{self.instruction}{Colors.RESET}", end="", flush=True)
 
         # Display static text (protected color)
         for (row, col), text in self.static_text.items():
@@ -109,7 +136,6 @@ class Screen:
         # Display fields with labels
         for field in self.fields:
             # Display label if present (protected/turquoise color per IBM convention)
-            # IBM 3270 layout: "Label: " with space before input field
             if field.label:
                 self.move_cursor(field.row, field.render_label_col())
                 print(f"{Colors.PROTECTED}{field.label}:{Colors.RESET} ", end="", flush=True)
@@ -131,21 +157,23 @@ class Screen:
             if remaining > 0 and field.field_type != FieldType.READONLY:
                 print(f"{Colors.DIM}{'_' * remaining}{Colors.RESET}", end="", flush=True)
 
-        # Display error message if present (red per IBM convention)
+        # Message line: above function keys (height-3)
         if self.error_message:
             self.move_cursor(height - 3, 0)
             print(Colors.error(self.error_message), end="", flush=True)
 
-        # Display function key hints at bottom (IBM 3270 convention)
+        # Separator line (height-2)
         self.move_cursor(height - 2, 0)
         print(Colors.dim("─" * min(78, width - 2)), end="", flush=True)
+
+        # Function keys (height-1) - CUA standard
         self.move_cursor(height - 1, 0)
-        hints = (
+        print(
             f"{Colors.info('F3=Cancel')}  "
             f"{Colors.info('Enter=Submit')}  "
-            f"{Colors.info('Tab=Next')}"
+            f"{Colors.info('Tab=Next')}",
+            end="", flush=True
         )
-        print(hints, end="", flush=True)
 
     def get_input(self, field: Field) -> str:
         """

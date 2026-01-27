@@ -10,22 +10,29 @@ class Form:
     High-level form builder with IBM 3270-style layout.
 
     Follows IBM CUA conventions:
-    - Title at top in intensified text
+    - Panel ID at top-left, title centered
+    - Instruction line below title
     - Labels in protected (turquoise) color
     - Input fields with underscores showing field length
     - Function key hints at bottom
     """
 
-    def __init__(self, title: str = ""):
+    # CUA layout: fields start after title (row 0) and instruction (row 1)
+    BODY_START_ROW = 3
+
+    def __init__(self, title: str = "", panel_id: str = "",
+                 instruction: str = ""):
         """
         Initialize a form.
 
         Args:
             title: Form title (displayed in uppercase per IBM convention)
+            panel_id: Optional panel identifier (shown at top-left per CUA)
+            instruction: Optional instruction text (shown on row 2 per CUA)
         """
         self.title = title.upper() if title else ""
-        self.screen = Screen(self.title)
-        self.current_row = 2
+        self.screen = Screen(self.title, panel_id=panel_id, instruction=instruction)
+        self.current_row = self.BODY_START_ROW
         self.label_col = 2
         self.field_col = 20
 

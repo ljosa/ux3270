@@ -30,17 +30,31 @@ class Menu:
     IBM 3270-style menu screen.
 
     Displays a list of options with single-key selection.
-    Follows IBM CUA (Common User Access) conventions.
+    Follows IBM CUA (Common User Access) conventions:
+    - Panel ID at top-left, title centered
+    - Instruction line below title
+    - Menu items in body area
+    - Function keys at bottom
     """
 
-    def __init__(self, title: str = "MAIN MENU"):
+    # CUA layout constants
+    TITLE_ROW = 0
+    INSTRUCTION_ROW = 1
+    ITEMS_START_ROW = 3
+
+    def __init__(self, title: str = "MAIN MENU", panel_id: str = "",
+                 instruction: str = "Select an option"):
         """
         Initialize a menu.
 
         Args:
             title: Menu title (displayed in uppercase per IBM convention)
+            panel_id: Optional panel identifier (shown at top-left per CUA)
+            instruction: Instruction text (shown on row 2 per CUA)
         """
         self.title = title.upper()
+        self.panel_id = panel_id.upper() if panel_id else ""
+        self.instruction = instruction
         self.items: List[MenuItem] = []
 
     def add_item(self, key: str, label: str, action: Callable) -> "Menu":
@@ -62,37 +76,59 @@ class Menu:
         """Clear the terminal screen."""
         print("\033[2J\033[H", end="", flush=True)
 
-    def _get_terminal_height(self) -> int:
-        """Get terminal height."""
+    def _get_terminal_size(self) -> tuple:
+        """Get terminal dimensions."""
         try:
             import os
-            return os.get_terminal_size().lines
+            size = os.get_terminal_size()
+            return size.lines, size.columns
         except Exception:
-            return 24  # IBM 3270 Model 2 standard
+            return 24, 80  # IBM 3270 Model 2 standard
+
+    def _move_cursor(self, row: int, col: int):
+        """Move cursor to specified position (0-indexed)."""
+        print(f"\033[{row + 1};{col + 1}H", end="", flush=True)
 
     def render(self):
-        """Render the menu following IBM 3270 conventions."""
+        """Render the menu following CUA layout.
+
+        CUA Layout (adapted for variable height):
+        - Row 0: Panel ID (left) + Title (centered)
+        - Row 1: Instruction line
+        - Rows 3+: Menu items
+        - Row height-2: Separator
+        - Row height-1: Function keys
+        """
         self.clear()
-        height = self._get_terminal_height()
+        height, width = self._get_terminal_size()
 
-        # Row 1: Title with IBM 3270-style border
-        border = "═" * (len(self.title) + 2)
-        print(f"{Colors.PROTECTED}╔{border}╗{Colors.RESET}")
-        print(f"{Colors.PROTECTED}║{Colors.RESET} {Colors.title(self.title)} {Colors.PROTECTED}║{Colors.RESET}")
-        print(f"{Colors.PROTECTED}╚{border}╝{Colors.RESET}")
-        print()
+        # Row 0: Panel ID (left) and Title (centered)
+        self._move_cursor(self.TITLE_ROW, 0)
+        if self.panel_id:
+            print(f"{Colors.PROTECTED}{self.panel_id}{Colors.RESET}", end="", flush=True)
+        if self.title:
+            title_col = max(0, (width - len(self.title)) // 2)
+            self._move_cursor(self.TITLE_ROW, title_col)
+            print(f"{Colors.title(self.title)}", end="", flush=True)
 
-        # Menu items with IBM 3270 styling
-        for item in self.items:
+        # Row 1: Instruction line
+        if self.instruction:
+            self._move_cursor(self.INSTRUCTION_ROW, 0)
+            print(f"{Colors.PROTECTED}{self.instruction}{Colors.RESET}", end="", flush=True)
+
+        # Menu items starting at row 3
+        for i, item in enumerate(self.items):
+            self._move_cursor(self.ITEMS_START_ROW + i, 2)
             key_display = Colors.intensified(item.key)
-            print(f"  {key_display} {Colors.DEFAULT}-{Colors.RESET} {item.label}")
+            print(f"{key_display} {Colors.PROTECTED}-{Colors.RESET} {item.label}", end="", flush=True)
 
-        # Move to bottom of screen for function key hints (IBM 3270 convention)
-        # Position on second-to-last line, leaving last line for messages
-        print(f"\033[{height - 1};1H", end="")
-        print(Colors.dim("─" * 78), end="")
-        print(f"\033[{height};1H", end="")
-        print(Colors.info("F3=Exit") + "  " + Colors.dim("Enter selection number"), end="", flush=True)
+        # Separator (height-2)
+        self._move_cursor(height - 2, 0)
+        print(Colors.dim("─" * min(78, width - 2)), end="", flush=True)
+
+        # Function keys (height-1)
+        self._move_cursor(height - 1, 0)
+        print(f"{Colors.info('F3=Exit')}", end="", flush=True)
 
     def _read_key(self, fd) -> str:
         """Read a key, handling escape sequences for function keys."""

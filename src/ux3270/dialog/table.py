@@ -12,27 +12,36 @@ class Table:
     """
     IBM 3270-style table/list display with pagination.
 
-    Displays tabular data with column headers following IBM conventions:
-    - Title at top
+    Displays tabular data with column headers following CUA conventions:
+    - Panel ID at top-left, title centered
     - Column headers in intensified text
     - Data rows in default (green) color
-    - Row count and pagination info at bottom
-    - F7/F8 for page up/down (IBM standard)
+    - Row count/pagination info on message line
+    - F7/F8 for page up/down (CUA standard)
+    - Function keys at bottom
     """
 
-    # Lines reserved for chrome (title box, headers, footer, etc.)
-    HEADER_LINES = 6  # Title box (3) + blank + column header + separator
-    FOOTER_LINES = 3  # Row count + separator + function keys
+    # CUA layout constants
+    TITLE_ROW = 0
+    HEADER_ROW = 2       # Column headers
+    DATA_START_ROW = 4   # First data row (after header + separator)
 
-    def __init__(self, title: str = "", columns: List[str] = None):
+    # Lines reserved for chrome
+    HEADER_LINES = 4     # Title + blank + column header + separator
+    FOOTER_LINES = 3     # Message + separator + function keys
+
+    def __init__(self, title: str = "", columns: List[str] = None,
+                 panel_id: str = ""):
         """
         Initialize a table.
 
         Args:
             title: Table title (displayed in uppercase per IBM convention)
             columns: List of column headers
+            panel_id: Optional panel identifier (shown at top-left per CUA)
         """
         self.title = title.upper() if title else ""
+        self.panel_id = panel_id.upper() if panel_id else ""
         self.columns = columns or []
         self.rows: List[List[str]] = []
         self.col_widths: List[int] = []
@@ -80,76 +89,85 @@ class Table:
         """Clear the terminal screen."""
         print("\033[2J\033[H", end="", flush=True)
 
-    def render(self, page_size: int, height: int, width: int):
-        """Render the table following IBM 3270 conventions.
+    def _move_cursor(self, row: int, col: int):
+        """Move cursor to specified position (0-indexed)."""
+        print(f"\033[{row + 1};{col + 1}H", end="", flush=True)
 
-        Args:
-            page_size: Number of data rows to display
-            height: Terminal height
-            width: Terminal width
+    def render(self, page_size: int, height: int, width: int):
+        """Render the table following CUA layout.
+
+        CUA Layout (adapted for variable height):
+        - Row 0: Panel ID (left) + Title (centered)
+        - Row 2: Column headers
+        - Row 3: Separator
+        - Rows 4 to height-4: Data rows
+        - Row height-3: Message line (row count/pagination)
+        - Row height-2: Separator
+        - Row height-1: Function keys
         """
         self.clear()
         self._calculate_widths()
 
-        # Row 1: Title with IBM 3270-style border
+        # Row 0: Panel ID (left) and Title (centered)
+        self._move_cursor(self.TITLE_ROW, 0)
+        if self.panel_id:
+            print(f"{Colors.PROTECTED}{self.panel_id}{Colors.RESET}", end="", flush=True)
         if self.title:
-            border = "═" * (len(self.title) + 2)
-            print(f"{Colors.PROTECTED}╔{border}╗{Colors.RESET}")
-            print(f"{Colors.PROTECTED}║{Colors.RESET} {Colors.title(self.title)} {Colors.PROTECTED}║{Colors.RESET}")
-            print(f"{Colors.PROTECTED}╚{border}╝{Colors.RESET}")
-            print()
+            title_col = max(0, (width - len(self.title)) // 2)
+            self._move_cursor(self.TITLE_ROW, title_col)
+            print(f"{Colors.title(self.title)}", end="", flush=True)
 
-        # Column headers (intensified per IBM convention)
+        # Row 2: Column headers (intensified per CUA convention)
         if self.columns:
+            self._move_cursor(self.HEADER_ROW, 0)
             header_parts = []
             for i, col in enumerate(self.columns):
                 w = self.col_widths[i] if i < len(self.col_widths) else len(col)
                 header_parts.append(Colors.header(col.ljust(w)))
-            print("  " + f" {Colors.PROTECTED}│{Colors.RESET} ".join(header_parts))
+            print("  " + f" {Colors.PROTECTED}│{Colors.RESET} ".join(header_parts), end="", flush=True)
 
-            # Separator line (protected color)
+            # Row 3: Separator line
+            self._move_cursor(self.HEADER_ROW + 1, 0)
             sep_parts = []
             for w in self.col_widths:
                 sep_parts.append("─" * w)
-            print(f"  {Colors.PROTECTED}" + "─┼─".join(sep_parts) + f"{Colors.RESET}")
+            print(f"  {Colors.PROTECTED}" + "─┼─".join(sep_parts) + f"{Colors.RESET}", end="", flush=True)
 
         # Data rows (paginated, default green color)
         end_row = min(self.current_row + page_size, len(self.rows))
         visible_rows = self.rows[self.current_row:end_row]
 
-        for row in visible_rows:
+        for i, row in enumerate(visible_rows):
+            self._move_cursor(self.DATA_START_ROW + i, 0)
             row_parts = []
-            for i, val in enumerate(row):
-                w = self.col_widths[i] if i < len(self.col_widths) else len(str(val))
+            for j, val in enumerate(row):
+                w = self.col_widths[j] if j < len(self.col_widths) else len(str(val))
                 row_parts.append(f"{Colors.DEFAULT}{str(val).ljust(w)}{Colors.RESET}")
-            print(f"  " + f" {Colors.PROTECTED}│{Colors.RESET} ".join(row_parts))
+            print(f"  " + f" {Colors.PROTECTED}│{Colors.RESET} ".join(row_parts), end="", flush=True)
 
-        # Row count and position (IBM convention: "Row X to Y of Z")
-        print(f"\033[{height - 2};1H", end="")
+        # Message line (height-3): Row count and pagination info
+        self._move_cursor(height - 3, 0)
         if self.rows:
             if len(self.rows) > page_size:
-                # Show pagination info
                 start_display = self.current_row + 1
                 end_display = min(self.current_row + page_size, len(self.rows))
                 count_msg = f"ROW {start_display} TO {end_display} OF {len(self.rows)}"
             else:
                 count_msg = f"ROWS {len(self.rows)}"
-            print(Colors.info(count_msg), end="")
+            print(Colors.info(count_msg), end="", flush=True)
 
-        # Move to bottom of screen for function key hints (IBM 3270 convention)
-        print(f"\033[{height - 1};1H", end="")
-        print(Colors.dim("─" * min(78, width - 2)), end="")
-        print(f"\033[{height};1H", end="")
+        # Separator (height-2)
+        self._move_cursor(height - 2, 0)
+        print(Colors.dim("─" * min(78, width - 2)), end="", flush=True)
 
-        # Build function key hints based on pagination state
+        # Function keys (height-1)
+        self._move_cursor(height - 1, 0)
         hints = [Colors.info("F3=Return")]
         if len(self.rows) > page_size:
             if self.current_row > 0:
                 hints.append(Colors.info("F7=Up"))
             if self.current_row + page_size < len(self.rows):
                 hints.append(Colors.info("F8=Down"))
-        hints.append(Colors.dim("Enter=Return"))
-
         print("  ".join(hints), end="", flush=True)
 
     def _read_key(self, fd) -> str:
