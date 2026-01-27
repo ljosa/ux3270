@@ -40,3 +40,6 @@ htmlcov/
 venv/
 env/
 ENV/
+
+# Demo output
+demo_output.txt
