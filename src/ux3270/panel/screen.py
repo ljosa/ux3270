@@ -175,15 +175,26 @@ class Screen:
             end="", flush=True
         )
 
+    # Class-level insert mode state (shared across fields, like real 3270)
+    _insert_mode = False
+
     def get_input(self, field: Field) -> str:
         """
-        Get user input for a field.
+        Get user input for a field with IBM 3270-style editing.
+
+        Supports:
+        - Left/Right arrows: cursor movement within field
+        - Home/End: beginning/end of field data
+        - Delete: delete character at cursor
+        - Insert: toggle insert/overwrite mode
+        - Backspace: delete character before cursor
+        - Ctrl+E or Shift+End: Erase EOF (clear to end of field)
 
         Args:
             field: Field to get input for
 
         Returns:
-            User input string
+            Action string (SUBMIT, NEXT, PREV, CANCEL)
         """
         if field.field_type == FieldType.READONLY:
             return field.value
@@ -230,27 +241,77 @@ class Screen:
                         if seq2 == 'Z':  # Shift+Tab
                             field.value = value
                             return "PREV"
+                        elif seq2 == 'D':  # Left arrow
+                            if cursor_pos > 0:
+                                cursor_pos -= 1
+                        elif seq2 == 'C':  # Right arrow
+                            if cursor_pos < len(value):
+                                cursor_pos += 1
+                        elif seq2 == 'H':  # Home
+                            cursor_pos = 0
+                        elif seq2 == 'F':  # End
+                            cursor_pos = len(value)
                         elif seq2 == '1':
                             seq3 = sys.stdin.read(1)
-                            if seq3 == '3':
+                            if seq3 == '~':  # Home (alternate)
+                                cursor_pos = 0
+                            elif seq3 == '3':
                                 sys.stdin.read(1)  # Read the ~
                                 return "CANCEL"  # F3
+                            elif seq3 == ';':
+                                # Could be Shift+End (ESC [ 1 ; 2 F)
+                                seq4 = sys.stdin.read(1)
+                                seq5 = sys.stdin.read(1)
+                                if seq4 == '2' and seq5 == 'F':
+                                    # Erase EOF - clear from cursor to end
+                                    value = value[:cursor_pos]
+                        elif seq2 == '2':
+                            seq3 = sys.stdin.read(1)
+                            if seq3 == '~':  # Insert
+                                Screen._insert_mode = not Screen._insert_mode
+                        elif seq2 == '3':
+                            seq3 = sys.stdin.read(1)
+                            if seq3 == '~':  # Delete
+                                if cursor_pos < len(value):
+                                    value = value[:cursor_pos] + value[cursor_pos+1:]
+                        elif seq2 == '4':
+                            seq3 = sys.stdin.read(1)
+                            if seq3 == '~':  # End (alternate)
+                                cursor_pos = len(value)
                     elif seq1 == 'O':
                         seq2 = sys.stdin.read(1)
                         if seq2 == 'R':  # F3
                             return "CANCEL"
+                        elif seq2 == 'H':  # Home (alternate)
+                            cursor_pos = 0
+                        elif seq2 == 'F':  # End (alternate)
+                            cursor_pos = len(value)
                 elif ch == '\x7f' or ch == '\x08':  # Backspace
                     if cursor_pos > 0:
                         value = value[:cursor_pos-1] + value[cursor_pos:]
                         cursor_pos -= 1
+                elif ch == '\x05':  # Ctrl+E = Erase EOF
+                    value = value[:cursor_pos]
                 elif ch == '\x03':  # Ctrl+C - also treat as cancel
                     return "CANCEL"
-                elif ch.isprintable() and len(value) < field.length:
+                elif ch.isprintable():
                     # Handle field type constraints
                     if field.field_type == FieldType.NUMERIC and not ch.isdigit():
                         continue
-                    value = value[:cursor_pos] + ch + value[cursor_pos:]
-                    cursor_pos += 1
+
+                    if Screen._insert_mode:
+                        # Insert mode: insert character, shift rest right
+                        if len(value) < field.length:
+                            value = value[:cursor_pos] + ch + value[cursor_pos:]
+                            cursor_pos += 1
+                    else:
+                        # Overwrite mode (3270 default): replace or append
+                        if cursor_pos < len(value):
+                            value = value[:cursor_pos] + ch + value[cursor_pos+1:]
+                            cursor_pos += 1
+                        elif len(value) < field.length:
+                            value = value + ch
+                            cursor_pos += 1
 
         finally:
             # Restore terminal settings
