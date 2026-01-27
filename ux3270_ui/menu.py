@@ -102,6 +102,8 @@ class Menu:
                 # Find matching menu item
                 for item in self.items:
                     if item.key.upper() == ch:
+                        # Restore terminal settings before calling action
+                        termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
                         self.clear()
                         item.action()
                         return ch
