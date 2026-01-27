@@ -122,9 +122,9 @@ class Menu:
             key_display = Colors.intensified(item.key)
             print(f"{key_display} {Colors.PROTECTED}-{Colors.RESET} {item.label}", end="", flush=True)
 
-        # Separator (height-2)
+        # Separator (height-2) - full width per CUA
         self._move_cursor(height - 2, 0)
-        print(Colors.dim("─" * min(78, width - 2)), end="", flush=True)
+        print(Colors.dim("─" * width), end="", flush=True)
 
         # Function keys (height-1)
         self._move_cursor(height - 1, 0)

@@ -162,9 +162,9 @@ class Screen:
             self.move_cursor(height - 3, 0)
             print(Colors.error(self.error_message), end="", flush=True)
 
-        # Separator line (height-2)
+        # Separator line (height-2) - full width per CUA
         self.move_cursor(height - 2, 0)
-        print(Colors.dim("─" * min(78, width - 2)), end="", flush=True)
+        print(Colors.dim("─" * width), end="", flush=True)
 
         # Function keys (height-1) - CUA standard
         self.move_cursor(height - 1, 0)

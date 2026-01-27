@@ -156,9 +156,9 @@ class Table:
                 count_msg = f"ROWS {len(self.rows)}"
             print(Colors.info(count_msg), end="", flush=True)
 
-        # Separator (height-2)
+        # Separator (height-2) - full width per CUA
         self._move_cursor(height - 2, 0)
-        print(Colors.dim("─" * min(78, width - 2)), end="", flush=True)
+        print(Colors.dim("─" * width), end="", flush=True)
 
         # Function keys (height-1)
         self._move_cursor(height - 1, 0)
