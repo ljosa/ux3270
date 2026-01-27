@@ -10,7 +10,7 @@ readme = "README.md"
 requires-python = ">=3.10"
 license = "MIT"
 authors = [
-    {name = "ux3270 contributors"}
+    {name = "Vebjorn Ljosa"}
 ]
 classifiers = [
     "Development Status :: 3 - Alpha",
