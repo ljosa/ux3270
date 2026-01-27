@@ -9,6 +9,7 @@ user submits the form.
 
 from .screen import Screen
 from .field import Field, FieldType
+from .colors import Colors
 
 __version__ = "0.1.0"
-__all__ = ["Screen", "Field", "FieldType"]
+__all__ = ["Screen", "Field", "FieldType", "Colors"]
