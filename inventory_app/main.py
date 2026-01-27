@@ -2,104 +2,11 @@
 """Inventory Management System using IBM 3270-like UI."""
 
 import argparse
-import atexit
-import platform
 import random
-import subprocess
 
 from ux3270 import FieldType, Colors
 from ux3270_ui import Menu, Form, Table
 from .database import InventoryDB
-
-
-# macOS function key management
-_original_fn_state = None
-
-
-def get_macos_fn_state() -> bool | None:
-    """Get current macOS function key state.
-
-    Returns:
-        True if standard F-keys enabled, False if media keys, None if unknown
-    """
-    if platform.system() != "Darwin":
-        return None
-    try:
-        result = subprocess.run(
-            ["defaults", "read", "-g", "com.apple.keyboard.fnState"],
-            capture_output=True,
-            text=True
-        )
-        if result.returncode == 0:
-            return result.stdout.strip() == "1"
-        # Key doesn't exist, default is False (media keys)
-        return False
-    except Exception:
-        return None
-
-
-def set_macos_fn_state(enabled: bool) -> bool:
-    """Set macOS function key state.
-
-    Args:
-        enabled: True for standard F-keys, False for media keys
-
-    Returns:
-        True if successful
-    """
-    if platform.system() != "Darwin":
-        return False
-    try:
-        value = "true" if enabled else "false"
-        result = subprocess.run(
-            ["defaults", "write", "-g", "com.apple.keyboard.fnState", "-bool", value],
-            capture_output=True
-        )
-        return result.returncode == 0
-    except Exception:
-        return False
-
-
-def restore_fn_state():
-    """Restore original function key state (called at exit)."""
-    global _original_fn_state
-    if _original_fn_state is not None:
-        set_macos_fn_state(_original_fn_state)
-        print(f"\nRestored Fn key setting.")
-
-
-def enable_fn_keys_for_session():
-    """Enable standard F-keys for this session, restore on exit.
-
-    Returns:
-        True if F-keys were enabled (or already enabled)
-    """
-    global _original_fn_state
-
-    if platform.system() != "Darwin":
-        print("Warning: --fn-keys only works on macOS")
-        return False
-
-    _original_fn_state = get_macos_fn_state()
-
-    if _original_fn_state is None:
-        print("Warning: Could not read Fn key setting")
-        return False
-
-    if _original_fn_state:
-        # Already using standard F-keys
-        _original_fn_state = None  # Don't restore
-        return True
-
-    # Enable standard F-keys
-    if set_macos_fn_state(True):
-        atexit.register(restore_fn_state)
-        print("Enabled standard F-keys (will restore on exit)")
-        return True
-    else:
-        print("Warning: Could not set Fn key setting")
-        _original_fn_state = None
-        return False
 
 
 # Sample data for demo purposes
@@ -458,7 +365,6 @@ Examples:
   inventory-app --load-sample    Load sample data (additive)
   inventory-app --clear          Clear all data from database
   inventory-app --clear --demo   Clear and reload sample data
-  inventory-app --fn-keys        Enable F-keys without Fn (macOS)
         """
     )
     parser.add_argument(
@@ -481,17 +387,8 @@ Examples:
         default="inventory.db",
         help="Path to database file (default: inventory.db)"
     )
-    parser.add_argument(
-        "--fn-keys",
-        action="store_true",
-        help="macOS: Enable standard F-keys for this session (restores on exit)"
-    )
 
     args = parser.parse_args()
-
-    # Handle --fn-keys (macOS only)
-    if args.fn_keys:
-        enable_fn_keys_for_session()
 
     # Handle --clear
     if args.clear:
