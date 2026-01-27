@@ -64,7 +64,7 @@ class InventoryApp:
 
     def run(self):
         """Run the main application loop."""
-        menu = Menu("INVENTORY MANAGEMENT SYSTEM")
+        menu = Menu("INVENTORY MANAGEMENT SYSTEM", panel_id="INV000")
         menu.add_item("1", "Add New Item", self.add_item)
         menu.add_item("2", "View All Items", self.view_items)
         menu.add_item("3", "Search Items", self.search_items)
@@ -124,13 +124,21 @@ class InventoryApp:
 
     def add_item(self):
         """Add a new item to inventory."""
-        form = Form("ADD NEW ITEM")
-        form.add_field("SKU", length=20, required=True)
-        form.add_field("Name", length=40, required=True)
-        form.add_field("Description", length=60)
-        form.add_field("Quantity", length=10, field_type=FieldType.NUMERIC, default="0")
-        form.add_field("Unit Price", length=10, default="0.00")
-        form.add_field("Location", length=30)
+        form = Form("ADD NEW ITEM", panel_id="INV001",
+                   help_text="Enter new item details. Required fields marked with *.",
+                   )
+        form.add_field("SKU", length=20, required=True,
+                      help_text="Stock Keeping Unit - unique identifier for this item (e.g., ELEC-001)")
+        form.add_field("Name", length=40, required=True,
+                      help_text="Descriptive name for the item")
+        form.add_field("Description", length=60,
+                      help_text="Optional detailed description of the item")
+        form.add_field("Quantity", length=10, field_type=FieldType.NUMERIC, default="0",
+                      help_text="Current stock quantity (numeric only)")
+        form.add_field("Unit Price", length=10, default="0.00",
+                      help_text="Price per unit (e.g., 29.99)")
+        form.add_field("Location", length=30,
+                      help_text="Storage location (e.g., Warehouse A-1)")
 
         result = form.show()
         if result is None:
@@ -163,7 +171,8 @@ class InventoryApp:
             self._show_message("NO ITEMS IN INVENTORY", "warning")
             return
 
-        table = Table("INVENTORY LIST", ["ID", "SKU", "Name", "Qty", "Price", "Location"])
+        table = Table("INVENTORY LIST", ["ID", "SKU", "Name", "Qty", "Price", "Location"],
+                     panel_id="INV010")
 
         for item in items:
             table.add_row(
@@ -179,8 +188,11 @@ class InventoryApp:
 
     def search_items(self):
         """Search for items."""
-        form = Form("SEARCH ITEMS")
-        form.add_field("Search Term", length=40, required=True)
+        form = Form("SEARCH ITEMS", panel_id="INV002",
+                   help_text="Search inventory by SKU, name, or description.",
+                   )
+        form.add_field("Search Term", length=40, required=True,
+                      help_text="Enter text to search in SKU, name, or description")
 
         result = form.show()
         if result is None:
@@ -194,7 +206,8 @@ class InventoryApp:
             return
 
         table = Table(f"SEARCH RESULTS: {search_term.upper()}",
-                     ["ID", "SKU", "Name", "Qty", "Price", "Location"])
+                     ["ID", "SKU", "Name", "Qty", "Price", "Location"],
+                     panel_id="INV011")
 
         for item in items:
             table.add_row(
@@ -211,8 +224,11 @@ class InventoryApp:
     def update_item(self):
         """Update an existing item."""
         # First, get the item ID
-        form = Form("UPDATE ITEM - SELECT")
-        form.add_field("Item ID or SKU", length=20, required=True)
+        form = Form("UPDATE ITEM - SELECT", panel_id="INV003",
+                   help_text="Enter item ID or SKU to update.",
+                   )
+        form.add_field("Item ID or SKU", length=20, required=True,
+                      help_text="Enter the numeric ID or SKU code of the item to update")
         result = form.show()
         if result is None:
             return  # User cancelled with F3
@@ -237,14 +253,22 @@ class InventoryApp:
             return
 
         # Show update form with current values
-        update_form = Form("UPDATE ITEM")
-        update_form.add_field("SKU", length=20, default=item["sku"], required=True)
-        update_form.add_field("Name", length=40, default=item["name"], required=True)
-        update_form.add_field("Description", length=60, default=item["description"])
+        update_form = Form("UPDATE ITEM", panel_id="INV003",
+                          help_text="Modify item details. Press Enter to save, F3 to cancel.",
+                          )
+        update_form.add_field("SKU", length=20, default=item["sku"], required=True,
+                             help_text="Stock Keeping Unit - must be unique")
+        update_form.add_field("Name", length=40, default=item["name"], required=True,
+                             help_text="Descriptive name for the item")
+        update_form.add_field("Description", length=60, default=item["description"],
+                             help_text="Optional detailed description")
         update_form.add_field("Quantity", length=10, field_type=FieldType.NUMERIC,
-                            default=str(item["quantity"]))
-        update_form.add_field("Unit Price", length=10, default=str(item["unit_price"]))
-        update_form.add_field("Location", length=30, default=item["location"])
+                            default=str(item["quantity"]),
+                            help_text="Current stock quantity")
+        update_form.add_field("Unit Price", length=10, default=str(item["unit_price"]),
+                             help_text="Price per unit")
+        update_form.add_field("Location", length=30, default=item["location"],
+                             help_text="Storage location")
 
         result = update_form.show()
         if result is None:
@@ -266,8 +290,11 @@ class InventoryApp:
 
     def delete_item(self):
         """Delete an item from inventory."""
-        form = Form("DELETE ITEM")
-        form.add_field("Item ID or SKU", length=20, required=True)
+        form = Form("DELETE ITEM", panel_id="INV004",
+                   help_text="Enter item to delete. You will be asked to confirm.",
+                   )
+        form.add_field("Item ID or SKU", length=20, required=True,
+                      help_text="Enter the numeric ID or SKU code of the item to delete")
         result = form.show()
         if result is None:
             return  # User cancelled with F3
@@ -292,9 +319,12 @@ class InventoryApp:
             return
 
         # Confirm deletion (IBM convention: Y/N)
-        confirm_form = Form("CONFIRM DELETE")
+        confirm_form = Form("CONFIRM DELETE", panel_id="INV004",
+                           help_text="Confirm deletion. This action cannot be undone.",
+                           )
         confirm_form.add_text(f"Item: {item['sku']} - {item['name']}")
-        confirm_form.add_field("Delete? (Y/N)", length=1, required=True)
+        confirm_form.add_field("Delete? (Y/N)", length=1, required=True,
+                              help_text="Enter Y to confirm deletion, N to cancel")
 
         confirm = confirm_form.show()
         if confirm is None:
@@ -310,8 +340,11 @@ class InventoryApp:
 
     def adjust_quantity(self):
         """Adjust the quantity of an item."""
-        form = Form("ADJUST QUANTITY")
-        form.add_field("Item ID or SKU", length=20, required=True)
+        form = Form("ADJUST QUANTITY", panel_id="INV005",
+                   help_text="Enter item to adjust stock quantity.",
+                   )
+        form.add_field("Item ID or SKU", length=20, required=True,
+                      help_text="Enter the numeric ID or SKU code of the item")
         result = form.show()
         if result is None:
             return  # User cancelled with F3
@@ -336,13 +369,16 @@ class InventoryApp:
             return
 
         # Show adjustment form
-        adj_form = Form("ADJUST QUANTITY")
+        adj_form = Form("ADJUST QUANTITY", panel_id="INV005",
+                       help_text="Enter new quantity. Use for stock adjustments, receiving, or corrections.",
+                       )
         adj_form.add_field("Item", length=40, field_type=FieldType.READONLY,
                           default=f"{item['sku']} - {item['name']}")
         adj_form.add_field("Current Qty", length=10, field_type=FieldType.READONLY,
                           default=str(item['quantity']))
         adj_form.add_field("New Qty", length=10, field_type=FieldType.NUMERIC,
-                          required=True, default=str(item['quantity']))
+                          required=True, default=str(item['quantity']),
+                          help_text="Enter the new quantity (numeric only)")
 
         result = adj_form.show()
         if result is None:

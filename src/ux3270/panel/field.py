@@ -29,11 +29,12 @@ class Field:
         label: str = "",
         default: str = "",
         required: bool = False,
-        validator: Optional[Callable[[str], bool]] = None
+        validator: Optional[Callable[[str], bool]] = None,
+        help_text: str = ""
     ):
         """
         Initialize a field.
-        
+
         Args:
             row: Row position (0-indexed)
             col: Column position (0-indexed)
@@ -43,6 +44,7 @@ class Field:
             default: Default value
             required: Whether the field is required
             validator: Optional validation function
+            help_text: Help text shown when F1 is pressed on this field
         """
         self.row = row
         self.col = col
@@ -52,6 +54,7 @@ class Field:
         self.default = default
         self.required = required
         self.validator = validator
+        self.help_text = help_text
         self._value = default
         
     @property
@@ -82,10 +85,15 @@ class Field:
     def render_label_col(self) -> int:
         """Calculate the column position for the label.
 
-        IBM 3270 convention: Label: <space> [input field]
-        So we need room for: label text + colon + space
+        CUA convention: * Label: <space> [input field]
+        Required fields have asterisk prefix.
+        So we need room for: optional asterisk + label text + colon + space
         """
         if not self.label:
             return self.col
         # Place label before the field: label + ": " (colon + space)
-        return self.col - len(self.label) - 2
+        offset = len(self.label) + 2
+        # Add space for required indicator "* "
+        if self.required:
+            offset += 2
+        return self.col - offset

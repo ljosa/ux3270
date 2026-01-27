@@ -30,7 +30,8 @@ class Screen:
     INSTRUCTION_ROW = 1     # Row for instruction text
     BODY_START_ROW = 2      # First row of panel body
 
-    def __init__(self, title: str = "", panel_id: str = "", instruction: str = ""):
+    def __init__(self, title: str = "", panel_id: str = "", instruction: str = "",
+                 help_text: str = "", show_command_line: bool = False):
         """
         Initialize a screen.
 
@@ -38,13 +39,19 @@ class Screen:
             title: Optional title to display at the top of the screen
             panel_id: Optional panel identifier (shown at top-left per CUA)
             instruction: Optional instruction text (shown on row 2 per CUA)
+            help_text: Help text shown when F1 is pressed (panel-level help)
+            show_command_line: Whether to show command line (CUA standard)
         """
         self.title = title.upper() if title else ""
         self.panel_id = panel_id.upper() if panel_id else ""
         self.instruction = instruction
+        self.help_text = help_text
+        self.show_command_line = show_command_line
         self.fields: List[Field] = []
         self.static_text: Dict[tuple[int, int], str] = {}
         self.error_message: str = ""
+        self.short_message: str = ""  # Short message at top-right
+        self._command_value: str = ""  # Current command line value
 
     def add_field(self, field: Field) -> "Screen":
         """
@@ -98,30 +105,37 @@ class Screen:
         except Exception:
             return 80  # IBM 3270 Model 2 standard
 
-    def render(self):
+    def render(self, in_command_line: bool = False):
         """Render the screen with all fields and text following CUA layout.
 
         CUA Layout (adapted for variable height):
-        - Row 0: Panel ID (left) + Title (centered)
+        - Row 0: Panel ID (left) + Title (centered) + Short message (right)
         - Row 1: Instruction line
-        - Rows 2 to height-4: Panel body (fields, static text)
-        - Row height-3: Message line
+        - Rows 2 to height-5: Panel body (fields, static text)
+        - Row height-4: Message line (long messages/errors)
+        - Row height-3: Command line (Command ===>)
         - Row height-2: Separator
         - Row height-1: Function keys
+
+        Args:
+            in_command_line: Whether cursor is in command line (for display)
         """
         self.clear()
         height = self.get_screen_height()
         width = self.get_screen_width()
 
-        # Row 0: Panel ID (left) and Title (centered) - CUA standard
+        # Row 0: Panel ID (left), Title (centered), Short message (right)
         self.move_cursor(self.TITLE_ROW, 0)
         if self.panel_id:
             print(f"{Colors.PROTECTED}{self.panel_id}{Colors.RESET}", end="", flush=True)
         if self.title:
-            # Center the title
             title_col = max(0, (width - len(self.title)) // 2)
             self.move_cursor(self.TITLE_ROW, title_col)
             print(f"{Colors.title(self.title)}", end="", flush=True)
+        if self.short_message:
+            msg_col = max(0, width - len(self.short_message) - 1)
+            self.move_cursor(self.TITLE_ROW, msg_col)
+            print(f"{Colors.info(self.short_message)}", end="", flush=True)
 
         # Row 1: Instruction line - CUA standard
         if self.instruction:
@@ -135,9 +149,11 @@ class Screen:
 
         # Display fields with labels
         for field in self.fields:
-            # Display label if present (protected/turquoise color per IBM convention)
+            # Display label with required indicator (* before label) per CUA
             if field.label:
                 self.move_cursor(field.row, field.render_label_col())
+                if field.required:
+                    print(f"{Colors.INTENSIFIED}*{Colors.RESET} ", end="", flush=True)
                 print(f"{Colors.PROTECTED}{field.label}:{Colors.RESET} ", end="", flush=True)
 
             # Display field value
@@ -157,10 +173,19 @@ class Screen:
             if remaining > 0 and field.field_type != FieldType.READONLY:
                 print(f"{Colors.DIM}{'_' * remaining}{Colors.RESET}", end="", flush=True)
 
-        # Message line: above function keys (height-3)
+        # Message line (height-4): long messages/errors
         if self.error_message:
-            self.move_cursor(height - 3, 0)
+            self.move_cursor(height - 4, 0)
             print(Colors.error(self.error_message), end="", flush=True)
+
+        # Command line (height-3) - CUA standard
+        if self.show_command_line:
+            self.move_cursor(height - 3, 0)
+            print(f"{Colors.PROTECTED}Command ===>{Colors.RESET} ", end="", flush=True)
+            print(f"{Colors.INPUT}{self._command_value}{Colors.RESET}", end="", flush=True)
+            cmd_remaining = 60 - len(self._command_value)
+            if cmd_remaining > 0:
+                print(f"{Colors.DIM}{'_' * cmd_remaining}{Colors.RESET}", end="", flush=True)
 
         # Separator line (height-2) - full width per CUA
         self.move_cursor(height - 2, 0)
@@ -169,11 +194,76 @@ class Screen:
         # Function keys (height-1) - CUA standard
         self.move_cursor(height - 1, 0)
         print(
+            f"{Colors.info('F1=Help')}  "
             f"{Colors.info('F3=Cancel')}  "
-            f"{Colors.info('Enter=Submit')}  "
-            f"{Colors.info('Tab=Next')}",
+            f"{Colors.info('Enter=Submit')}",
             end="", flush=True
         )
+
+    def _show_help(self, field: Field):
+        """
+        Display help panel for the current field or screen.
+
+        Shows field-specific help if available, otherwise panel-level help.
+        CUA convention: help panel with F3=Return to dismiss.
+        """
+        self.clear()
+        height = self.get_screen_height()
+        width = self.get_screen_width()
+
+        # Title row
+        self.move_cursor(0, 0)
+        print(f"{Colors.title('HELP')}", end="", flush=True)
+
+        # Help content
+        help_content = field.help_text if field.help_text else self.help_text
+        if help_content:
+            self.move_cursor(2, 2)
+            print(f"{Colors.PROTECTED}{help_content}{Colors.RESET}", end="", flush=True)
+        else:
+            self.move_cursor(2, 2)
+            print(f"{Colors.PROTECTED}No help available for this field.{Colors.RESET}", end="", flush=True)
+
+        # If field has a label, show it
+        if field.label:
+            self.move_cursor(4, 2)
+            print(f"{Colors.PROTECTED}Field: {field.label}{Colors.RESET}", end="", flush=True)
+
+        # Separator
+        self.move_cursor(height - 2, 0)
+        print(Colors.dim("─" * width), end="", flush=True)
+
+        # Function keys
+        self.move_cursor(height - 1, 0)
+        print(f"{Colors.info('F3=Return')}  {Colors.info('Enter=Return')}", end="", flush=True)
+
+        # Wait for key press
+        fd = sys.stdin.fileno()
+        old_settings = termios.tcgetattr(fd)
+        try:
+            tty.setraw(fd)
+            while True:
+                ch = sys.stdin.read(1)
+                if ch in ('\r', '\n', '\x03'):  # Enter or Ctrl+C
+                    break
+                if ch == '\x1b':  # Escape sequence
+                    seq1 = sys.stdin.read(1)
+                    if seq1 == '[':
+                        seq2 = sys.stdin.read(1)
+                        if seq2 == '1':
+                            seq3 = sys.stdin.read(1)
+                            if seq3 == '3':
+                                sys.stdin.read(1)  # Read ~
+                                break  # F3
+                    elif seq1 == 'O':
+                        seq2 = sys.stdin.read(1)
+                        if seq2 == 'R':  # F3
+                            break
+        finally:
+            termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+
+        # Re-render the main screen
+        self.render()
 
     # Class-level insert mode state (shared across fields, like real 3270)
     _insert_mode = False
@@ -189,6 +279,7 @@ class Screen:
         - Insert: toggle insert/overwrite mode
         - Backspace: delete character before cursor
         - Ctrl+E or Shift+End: Erase EOF (clear to end of field)
+        - F1: Show help for the current field
 
         Args:
             field: Field to get input for
@@ -255,6 +346,13 @@ class Screen:
                             seq3 = sys.stdin.read(1)
                             if seq3 == '~':  # Home (alternate)
                                 cursor_pos = 0
+                            elif seq3 == '1':
+                                sys.stdin.read(1)  # Read the ~
+                                # F1 - Show help
+                                field.value = value
+                                termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+                                self._show_help(field)
+                                tty.setraw(fd)
                             elif seq3 == '3':
                                 sys.stdin.read(1)  # Read the ~
                                 return "CANCEL"  # F3
@@ -280,7 +378,12 @@ class Screen:
                                 cursor_pos = len(value)
                     elif seq1 == 'O':
                         seq2 = sys.stdin.read(1)
-                        if seq2 == 'R':  # F3
+                        if seq2 == 'P':  # F1
+                            field.value = value
+                            termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+                            self._show_help(field)
+                            tty.setraw(fd)
+                        elif seq2 == 'R':  # F3
                             return "CANCEL"
                         elif seq2 == 'H':  # Home (alternate)
                             cursor_pos = 0
@@ -317,6 +420,109 @@ class Screen:
             # Restore terminal settings
             termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
 
+    def _get_command_input(self) -> str:
+        """
+        Get user input for the command line with IBM 3270-style editing.
+
+        Returns:
+            Action string (SUBMIT, NEXT, PREV, CANCEL)
+        """
+        height = self.get_screen_height()
+        cmd_row = height - 3
+        cmd_col = 13  # After "Command ===> "
+
+        self.move_cursor(cmd_row, cmd_col)
+
+        fd = sys.stdin.fileno()
+        old_settings = termios.tcgetattr(fd)
+
+        try:
+            tty.setraw(fd)
+
+            value = self._command_value
+            cursor_pos = len(value)
+            max_length = 60
+
+            while True:
+                # Display current value
+                self.move_cursor(cmd_row, cmd_col)
+                print(f"{Colors.INPUT}{value}{Colors.RESET}", end="", flush=True)
+                print(f"{Colors.DIM}{'_' * (max_length - len(value))}{Colors.RESET}", end="", flush=True)
+                self.move_cursor(cmd_row, cmd_col + cursor_pos)
+
+                ch = sys.stdin.read(1)
+
+                if ch == '\r' or ch == '\n':
+                    self._command_value = value
+                    return "SUBMIT"
+                elif ch == '\t':
+                    self._command_value = value
+                    return "NEXT"
+                elif ch == '\x1b':
+                    seq1 = sys.stdin.read(1)
+                    if seq1 == '[':
+                        seq2 = sys.stdin.read(1)
+                        if seq2 == 'Z':  # Shift+Tab
+                            self._command_value = value
+                            return "PREV"
+                        elif seq2 == 'D':  # Left
+                            if cursor_pos > 0:
+                                cursor_pos -= 1
+                        elif seq2 == 'C':  # Right
+                            if cursor_pos < len(value):
+                                cursor_pos += 1
+                        elif seq2 == 'H':  # Home
+                            cursor_pos = 0
+                        elif seq2 == 'F':  # End
+                            cursor_pos = len(value)
+                        elif seq2 == '1':
+                            seq3 = sys.stdin.read(1)
+                            if seq3 == '3':
+                                sys.stdin.read(1)
+                                return "CANCEL"
+                        elif seq2 == '3':
+                            seq3 = sys.stdin.read(1)
+                            if seq3 == '~':  # Delete
+                                if cursor_pos < len(value):
+                                    value = value[:cursor_pos] + value[cursor_pos+1:]
+                    elif seq1 == 'O':
+                        seq2 = sys.stdin.read(1)
+                        if seq2 == 'R':
+                            return "CANCEL"
+                elif ch == '\x7f' or ch == '\x08':  # Backspace
+                    if cursor_pos > 0:
+                        value = value[:cursor_pos-1] + value[cursor_pos:]
+                        cursor_pos -= 1
+                elif ch == '\x03':  # Ctrl+C
+                    return "CANCEL"
+                elif ch.isprintable():
+                    if len(value) < max_length:
+                        if Screen._insert_mode:
+                            value = value[:cursor_pos] + ch + value[cursor_pos:]
+                        else:
+                            if cursor_pos < len(value):
+                                value = value[:cursor_pos] + ch + value[cursor_pos+1:]
+                            else:
+                                value = value + ch
+                        cursor_pos += 1
+
+        finally:
+            termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+
+    def _find_first_editable_field(self) -> int:
+        """Find index of first editable field."""
+        for i, field in enumerate(self.fields):
+            if field.field_type != FieldType.READONLY:
+                return i
+        return -1
+
+    def _find_last_editable_field(self) -> int:
+        """Find index of last editable field."""
+        for i in range(len(self.fields) - 1, -1, -1):
+            if self.fields[i].field_type != FieldType.READONLY:
+                return i
+        return -1
+
     def show(self) -> Dict[str, Any]:
         """
         Display the screen and handle user interaction.
@@ -330,14 +536,10 @@ class Screen:
         if not self.fields:
             raise ValueError("Screen must have at least one field")
 
-        current_field_idx = 0
+        current_field_idx = self._find_first_editable_field()
+        in_command_line = False
 
-        # Skip readonly fields initially
-        while (current_field_idx < len(self.fields) and
-               self.fields[current_field_idx].field_type == FieldType.READONLY):
-            current_field_idx += 1
-
-        if current_field_idx >= len(self.fields):
+        if current_field_idx < 0:
             # All fields are readonly, just display and wait for enter
             self.render()
             input(f"\n{Colors.dim('Press Enter to continue...')}")
@@ -345,41 +547,55 @@ class Screen:
 
         try:
             while True:
-                self.error_message = ""
-                self.render()
+                self.render(in_command_line=in_command_line)
 
-                current_field = self.fields[current_field_idx]
-                action = self.get_input(current_field)
+                if in_command_line:
+                    action = self._get_command_input()
+                else:
+                    current_field = self.fields[current_field_idx]
+                    action = self.get_input(current_field)
 
                 if action == "NEXT":
-                    # Move to next editable field
-                    next_idx = current_field_idx + 1
-                    while next_idx < len(self.fields):
-                        if self.fields[next_idx].field_type != FieldType.READONLY:
-                            current_field_idx = next_idx
-                            break
-                        next_idx += 1
+                    self.error_message = ""  # Clear error on navigation
+                    if in_command_line:
+                        # From command line, go to first field
+                        in_command_line = False
+                        current_field_idx = self._find_first_editable_field()
                     else:
-                        # Wrap to first field
-                        current_field_idx = 0
-                        while (current_field_idx < len(self.fields) and
-                               self.fields[current_field_idx].field_type == FieldType.READONLY):
-                            current_field_idx += 1
+                        # Move to next editable field
+                        next_idx = current_field_idx + 1
+                        while next_idx < len(self.fields):
+                            if self.fields[next_idx].field_type != FieldType.READONLY:
+                                current_field_idx = next_idx
+                                break
+                            next_idx += 1
+                        else:
+                            # Past last field - go to command line if enabled
+                            if self.show_command_line:
+                                in_command_line = True
+                            else:
+                                current_field_idx = self._find_first_editable_field()
 
                 elif action == "PREV":
-                    # Move to previous editable field
-                    prev_idx = current_field_idx - 1
-                    while prev_idx >= 0:
-                        if self.fields[prev_idx].field_type != FieldType.READONLY:
-                            current_field_idx = prev_idx
-                            break
-                        prev_idx -= 1
+                    self.error_message = ""  # Clear error on navigation
+                    if in_command_line:
+                        # From command line, go to last field
+                        in_command_line = False
+                        current_field_idx = self._find_last_editable_field()
                     else:
-                        # Wrap to last field
-                        current_field_idx = len(self.fields) - 1
-                        while (current_field_idx >= 0 and
-                               self.fields[current_field_idx].field_type == FieldType.READONLY):
-                            current_field_idx -= 1
+                        # Move to previous editable field
+                        prev_idx = current_field_idx - 1
+                        while prev_idx >= 0:
+                            if self.fields[prev_idx].field_type != FieldType.READONLY:
+                                current_field_idx = prev_idx
+                                break
+                            prev_idx -= 1
+                        else:
+                            # Before first field - go to command line if enabled
+                            if self.show_command_line:
+                                in_command_line = True
+                            else:
+                                current_field_idx = self._find_last_editable_field()
 
                 elif action == "CANCEL":
                     # F3 = Cancel/Return (IBM standard)
@@ -387,12 +603,23 @@ class Screen:
                     return None
 
                 elif action == "SUBMIT":
+                    # Check for CUA command line commands
+                    cmd = self._command_value.strip().upper()
+                    if cmd in ("=X", "CANCEL"):
+                        # =X is CUA standard for exit/cancel
+                        self.clear()
+                        return None
+
                     # Validate all fields
                     valid = True
-                    for field in self.fields:
+                    for idx, field in enumerate(self.fields):
                         is_valid, error = field.validate()
                         if not is_valid:
                             self.error_message = error
+                            # Move cursor to the invalid field
+                            if field.field_type != FieldType.READONLY:
+                                current_field_idx = idx
+                                in_command_line = False
                             valid = False
                             break
 
@@ -411,4 +638,7 @@ class Screen:
         for field in self.fields:
             key = field.label if field.label else f"field_{self.fields.index(field)}"
             results[key] = field.value
+        # Include command line value if shown
+        if self.show_command_line and self._command_value:
+            results["_command"] = self._command_value
         return results

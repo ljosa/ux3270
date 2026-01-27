@@ -21,7 +21,8 @@ class Form:
     BODY_START_ROW = 3
 
     def __init__(self, title: str = "", panel_id: str = "",
-                 instruction: str = ""):
+                 instruction: str = "", help_text: str = "",
+                 show_command_line: bool = False):
         """
         Initialize a form.
 
@@ -29,9 +30,12 @@ class Form:
             title: Form title (displayed in uppercase per IBM convention)
             panel_id: Optional panel identifier (shown at top-left per CUA)
             instruction: Optional instruction text (shown on row 2 per CUA)
+            help_text: Panel-level help text shown when F1 is pressed
+            show_command_line: Whether to show command line (CUA standard)
         """
         self.title = title.upper() if title else ""
-        self.screen = Screen(self.title, panel_id=panel_id, instruction=instruction)
+        self.screen = Screen(self.title, panel_id=panel_id, instruction=instruction,
+                            help_text=help_text, show_command_line=show_command_line)
         self.current_row = self.BODY_START_ROW
         self.label_col = 2
         self.field_col = 20
@@ -43,7 +47,8 @@ class Form:
         field_type: FieldType = FieldType.TEXT,
         default: str = "",
         required: bool = False,
-        validator: Optional[Callable[[str], bool]] = None
+        validator: Optional[Callable[[str], bool]] = None,
+        help_text: str = ""
     ) -> "Form":
         """
         Add a field to the form.
@@ -55,6 +60,7 @@ class Form:
             default: Default value
             required: Whether field is required
             validator: Optional validation function
+            help_text: Help text shown when F1 is pressed on this field
 
         Returns:
             Self for method chaining
@@ -67,7 +73,8 @@ class Form:
             label=label,
             default=default,
             required=required,
-            validator=validator
+            validator=validator,
+            help_text=help_text
         )
         self.screen.add_field(field)
         self.current_row += 2  # Add spacing between fields
@@ -85,6 +92,19 @@ class Form:
         """
         self.screen.add_text(self.current_row, self.label_col, text)
         self.current_row += 2
+        return self
+
+    def set_short_message(self, message: str) -> "Form":
+        """
+        Set a short message to display at top-right of screen.
+
+        Args:
+            message: Short message text (e.g., "ROWS 1 TO 10")
+
+        Returns:
+            Self for method chaining
+        """
+        self.screen.short_message = message
         return self
 
     def show(self) -> Dict[str, Any]:
