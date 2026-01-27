@@ -203,8 +203,6 @@ class Menu:
                 result = self.show()
                 if result is None:
                     self.clear()
-                    print(Colors.info("***"))
                     break
         except KeyboardInterrupt:
             self.clear()
-            print(Colors.info("***"))
