@@ -2,7 +2,6 @@
 
 import sqlite3
 from typing import List, Optional, Dict, Any
-from datetime import datetime
 
 
 class InventoryDB:
