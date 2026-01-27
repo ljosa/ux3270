@@ -75,9 +75,51 @@ class InventoryApp:
         menu.run()
         self.db.close()
 
-    def _wait_for_enter(self):
-        """Wait for user to press Enter (IBM convention)."""
-        print(Colors.dim("\nPress Enter to continue..."), end="")
+    def _get_terminal_size(self) -> tuple:
+        """Get terminal dimensions."""
+        import os
+        try:
+            size = os.get_terminal_size()
+            return size.lines, size.columns
+        except Exception:
+            return 24, 80
+
+    def _show_message(self, message: str, msg_type: str = "info"):
+        """Display a message following CUA layout.
+
+        CUA Layout:
+        - Message on the message line (height-3)
+        - Separator at height-2
+        - Function keys at height-1
+
+        Args:
+            message: The message to display
+            msg_type: One of "error", "success", "warning", "info"
+        """
+        height, width = self._get_terminal_size()
+
+        # Clear screen
+        print("\033[2J\033[H", end="", flush=True)
+
+        # Message line (height-3)
+        print(f"\033[{height - 2};1H", end="", flush=True)
+        if msg_type == "error":
+            print(Colors.error(message), end="", flush=True)
+        elif msg_type == "success":
+            print(Colors.success(message), end="", flush=True)
+        elif msg_type == "warning":
+            print(Colors.warning(message), end="", flush=True)
+        else:
+            print(Colors.info(message), end="", flush=True)
+
+        # Separator (height-2)
+        print(f"\033[{height - 1};1H", end="", flush=True)
+        print(Colors.dim("─" * width), end="", flush=True)
+
+        # Function key hint (height-1)
+        print(f"\033[{height};1H", end="", flush=True)
+        print(Colors.info("Enter=Continue"), end="", flush=True)
+
         input()
 
     def add_item(self):
@@ -98,8 +140,7 @@ class InventoryApp:
             # Check if SKU already exists
             existing = self.db.get_item_by_sku(result["SKU"])
             if existing:
-                print(Colors.error(f"ERROR: SKU '{result['SKU']}' already exists"))
-                self._wait_for_enter()
+                self._show_message(f"ERROR: SKU '{result['SKU']}' already exists", "error")
                 return
 
             item_id = self.db.add_item(
@@ -110,19 +151,16 @@ class InventoryApp:
                 unit_price=float(result.get("Unit Price", "0.0") or "0.0"),
                 location=result.get("Location", "")
             )
-            print(Colors.success(f"ITEM ADDED - ID: {item_id}"))
+            self._show_message(f"ITEM ADDED - ID: {item_id}", "success")
         except Exception as e:
-            print(Colors.error(f"ERROR: {e}"))
-
-        self._wait_for_enter()
+            self._show_message(f"ERROR: {e}", "error")
 
     def view_items(self):
         """View all items in inventory."""
         items = self.db.list_items()
 
         if not items:
-            print(Colors.warning("NO ITEMS IN INVENTORY"))
-            self._wait_for_enter()
+            self._show_message("NO ITEMS IN INVENTORY", "warning")
             return
 
         table = Table("INVENTORY LIST", ["ID", "SKU", "Name", "Qty", "Price", "Location"])
@@ -152,8 +190,7 @@ class InventoryApp:
         items = self.db.search_items(search_term)
 
         if not items:
-            print(Colors.warning(f"NO ITEMS FOUND FOR '{search_term.upper()}'"))
-            self._wait_for_enter()
+            self._show_message(f"NO ITEMS FOUND FOR '{search_term.upper()}'", "warning")
             return
 
         table = Table(f"SEARCH RESULTS: {search_term.upper()}",
@@ -193,8 +230,7 @@ class InventoryApp:
             item = self.db.get_item_by_sku(item_id_or_sku)
 
         if not item:
-            print(Colors.error(f"ITEM NOT FOUND: {item_id_or_sku}"))
-            self._wait_for_enter()
+            self._show_message(f"ITEM NOT FOUND: {item_id_or_sku}", "error")
             return
 
         # Show update form with current values
@@ -221,11 +257,9 @@ class InventoryApp:
                 unit_price=float(result.get("Unit Price", "0.0") or "0.0"),
                 location=result.get("Location", "")
             )
-            print(Colors.success("ITEM UPDATED"))
+            self._show_message("ITEM UPDATED", "success")
         except Exception as e:
-            print(Colors.error(f"ERROR: {e}"))
-
-        self._wait_for_enter()
+            self._show_message(f"ERROR: {e}", "error")
 
     def delete_item(self):
         """Delete an item from inventory."""
@@ -248,8 +282,7 @@ class InventoryApp:
             item = self.db.get_item_by_sku(item_id_or_sku)
 
         if not item:
-            print(Colors.error(f"ITEM NOT FOUND: {item_id_or_sku}"))
-            self._wait_for_enter()
+            self._show_message(f"ITEM NOT FOUND: {item_id_or_sku}", "error")
             return
 
         # Confirm deletion (IBM convention: Y/N)
@@ -263,13 +296,11 @@ class InventoryApp:
 
         if confirm["Delete? (Y/N)"].upper() == "Y":
             if self.db.delete_item(item["id"]):
-                print(Colors.success("ITEM DELETED"))
+                self._show_message("ITEM DELETED", "success")
             else:
-                print(Colors.error("DELETE FAILED"))
+                self._show_message("DELETE FAILED", "error")
         else:
-            print(Colors.info("DELETE CANCELLED"))
-
-        self._wait_for_enter()
+            self._show_message("DELETE CANCELLED", "info")
 
     def adjust_quantity(self):
         """Adjust the quantity of an item."""
@@ -292,8 +323,7 @@ class InventoryApp:
             item = self.db.get_item_by_sku(item_id_or_sku)
 
         if not item:
-            print(Colors.error(f"ITEM NOT FOUND: {item_id_or_sku}"))
-            self._wait_for_enter()
+            self._show_message(f"ITEM NOT FOUND: {item_id_or_sku}", "error")
             return
 
         # Show adjustment form
@@ -312,11 +342,9 @@ class InventoryApp:
         try:
             new_qty = int(result["New Qty"])
             self.db.update_item(item["id"], quantity=new_qty)
-            print(Colors.success(f"QUANTITY UPDATED: {item['quantity']} -> {new_qty}"))
+            self._show_message(f"QUANTITY UPDATED: {item['quantity']} -> {new_qty}", "success")
         except Exception as e:
-            print(Colors.error(f"ERROR: {e}"))
-
-        self._wait_for_enter()
+            self._show_message(f"ERROR: {e}", "error")
 
 
 def load_sample_data(db: InventoryDB) -> int:
