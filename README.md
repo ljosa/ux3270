@@ -9,6 +9,10 @@ Create terminal applications with an IBM 3270-style interaction model: display a
 ## Installation
 
 ```bash
+# With uv (recommended)
+uv pip install -e .
+
+# Or with pip
 pip install -e .
 ```
 
@@ -79,7 +83,7 @@ The library uses IBM 3270 color conventions:
 
 ## Requirements
 
-- Python 3.8+
+- Python 3.10+
 - Unix-like system (Linux, macOS)
 - Terminal with ANSI support
 

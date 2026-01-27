@@ -33,4 +33,8 @@ Repository = "https://github.com/ljosa/ux3270"
 inventory-app = "inventory_app.main:main"
 
 [tool.hatch.build.targets.wheel]
-packages = ["ux3270", "ux3270_ui", "inventory_app"]
+packages = ["src/ux3270", "src/ux3270_ui", "examples/inventory_app"]
+
+[tool.hatch.build.targets.wheel.sources]
+"src" = ""
+"examples" = ""
