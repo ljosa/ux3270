@@ -217,16 +217,19 @@ class InventoryApp:
         if result is None:
             return  # User cancelled with F3
 
-        # Find the item
+        # Find the item - try ID first, then SKU
         item_id_or_sku = result["Item ID or SKU"]
         item = None
 
-        # Try as ID first
+        # Try as ID if it looks like a number
         try:
             item_id = int(item_id_or_sku)
             item = self.db.get_item(item_id)
         except ValueError:
-            # Try as SKU
+            pass
+
+        # If not found by ID, try as SKU
+        if not item:
             item = self.db.get_item_by_sku(item_id_or_sku)
 
         if not item:
@@ -269,16 +272,19 @@ class InventoryApp:
         if result is None:
             return  # User cancelled with F3
 
-        # Find the item
+        # Find the item - try ID first, then SKU
         item_id_or_sku = result["Item ID or SKU"]
         item = None
 
-        # Try as ID first
+        # Try as ID if it looks like a number
         try:
             item_id = int(item_id_or_sku)
             item = self.db.get_item(item_id)
         except ValueError:
-            # Try as SKU
+            pass
+
+        # If not found by ID, try as SKU
+        if not item:
             item = self.db.get_item_by_sku(item_id_or_sku)
 
         if not item:
@@ -310,16 +316,19 @@ class InventoryApp:
         if result is None:
             return  # User cancelled with F3
 
-        # Find the item
+        # Find the item - try ID first, then SKU
         item_id_or_sku = result["Item ID or SKU"]
         item = None
 
-        # Try as ID first
+        # Try as ID if it looks like a number
         try:
             item_id = int(item_id_or_sku)
             item = self.db.get_item(item_id)
         except ValueError:
-            # Try as SKU
+            pass
+
+        # If not found by ID, try as SKU
+        if not item:
             item = self.db.get_item_by_sku(item_id_or_sku)
 
         if not item:
