@@ -293,9 +293,9 @@ class WorkWithList:
                 abs_idx = self.current_row + i
                 self._move_cursor(layout["data_start"] + i, 0)
 
-                # Action input field (green, underscore if empty)
+                # Action input field (green, underscore placeholder)
                 action_val = self.action_inputs[abs_idx] if abs_idx < len(self.action_inputs) else ""
-                action_display = action_val.ljust(1) if action_val else "_"
+                action_display = action_val.ljust(3) if action_val else "___"
                 print(f"  {Colors.DEFAULT}{action_display}{Colors.RESET}", end="", flush=True)
 
                 # Data columns
@@ -354,7 +354,7 @@ class WorkWithList:
                 abs_idx = self.current_row + i
                 self._move_cursor(layout["data_start"] + i, 2)
                 action_val = self.action_inputs[abs_idx] if abs_idx < len(self.action_inputs) else ""
-                action_display = action_val.ljust(1) if action_val else "_"
+                action_display = action_val.ljust(3) if action_val else "___"
                 print(f"{Colors.DEFAULT}{action_display}{Colors.RESET}", end="", flush=True)
 
         # Position cursor
