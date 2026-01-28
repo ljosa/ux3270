@@ -194,11 +194,11 @@ class SelectionList:
                 self._move_cursor(self.INSTRUCTION_ROW, 0)
                 print(f"{Colors.PROTECTED}{self.instruction}{Colors.RESET}", end="", flush=True)
 
-            # Row 3: Column headers with action column
+            # Row 3: Column headers with Opt column
             if self._columns:
                 self._move_cursor(self.HEADER_ROW, 0)
-                # Action column header
-                header_parts = [Colors.header("S")]
+                # Opt column header (2 chars)
+                header_parts = [Colors.header("Opt")]
                 for i, col in enumerate(self._columns):
                     w = self.col_widths[i] if i < len(self.col_widths) else len(col.name)
                     if col.align == "right":
@@ -209,7 +209,7 @@ class SelectionList:
 
                 # Row 4: Separator
                 self._move_cursor(self.HEADER_ROW + 1, 0)
-                sep_parts = ["─"]  # Action column
+                sep_parts = ["───"]  # Opt column (3 chars to match header)
                 for w in self.col_widths:
                     sep_parts.append("─" * w)
                 print(f"  {Colors.PROTECTED}{'──'.join(sep_parts)}{Colors.RESET}", end="", flush=True)
@@ -222,9 +222,12 @@ class SelectionList:
                 abs_idx = self.current_row + i
                 self._move_cursor(self.DATA_START_ROW + i, 0)
 
-                # Action input field (green, underscore if empty)
+                # Opt input field (2 chars visible, padded to 3 for alignment)
                 action_val = self.action_inputs[abs_idx] if abs_idx < len(self.action_inputs) else ""
-                action_display = action_val.ljust(1) if action_val else "_"
+                if action_val:
+                    action_display = action_val.ljust(3)
+                else:
+                    action_display = "__ "  # 2 underscores + space
                 print(f"  {Colors.DEFAULT}{action_display}{Colors.RESET}", end="", flush=True)
 
                 # Data columns
@@ -265,13 +268,16 @@ class SelectionList:
                     hints.append(Colors.info("F8=Down"))
             print("  ".join(hints), end="", flush=True)
         else:
-            # Partial update: refresh action input fields
+            # Partial update: refresh Opt input fields
             end_row = min(self.current_row + page_size, len(self.rows))
             for i in range(end_row - self.current_row):
                 abs_idx = self.current_row + i
                 self._move_cursor(self.DATA_START_ROW + i, 2)
                 action_val = self.action_inputs[abs_idx] if abs_idx < len(self.action_inputs) else ""
-                action_display = action_val.ljust(1) if action_val else "_"
+                if action_val:
+                    action_display = action_val.ljust(3)
+                else:
+                    action_display = "__ "
                 print(f"{Colors.DEFAULT}{action_display}{Colors.RESET}", end="", flush=True)
 
         # Position cursor at current action input field
