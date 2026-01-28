@@ -120,16 +120,34 @@ class WorkWithList:
         # Instruction
         screen.add_text(instruction_row, 0, self.instruction, Colors.PROTECTED)
 
-        # Header fields
-        for i, hf in enumerate(self._header_fields):
-            row = header_fields_start + i
-            label_text = f"{hf['label']} . . ."
-            screen.add_text(row, 2, label_text, Colors.PROTECTED)
-            col = 2 + len(label_text) + 1
-            field = Field(row=row, col=col, length=hf["length"],
-                         field_type=hf["field_type"], label=hf["label"],
-                         default=hf["value"])
-            screen.add_field(field)
+        # Header fields - align all input fields at the same column
+        if self._header_fields:
+            # Find the longest label to calculate field column
+            max_label_len = max(len(hf["label"]) for hf in self._header_fields)
+            # Label format: "Label . . ." with dots padding to align
+            # Minimum dots is 3, add more to align longer labels
+            field_col = 2 + max_label_len + 7  # 2 indent + label + " . . . " (7 chars)
+
+            for i, hf in enumerate(self._header_fields):
+                row = header_fields_start + i
+                label = hf["label"]
+                # Pad with dots: "Label . . ." or "Label . . . . ." for shorter labels
+                dots_needed = field_col - 2 - len(label) - 2  # space before and after dots
+                dots = " " + ". " * (dots_needed // 2)
+                if dots_needed % 2:
+                    dots += "."
+                label_text = label + dots
+                screen.add_text(row, 2, label_text, Colors.PROTECTED)
+
+                if hf["field_type"] == FieldType.READONLY:
+                    # Read-only: render as static text so Tab skips it
+                    screen.add_text(row, field_col, hf["value"], Colors.PROTECTED)
+                else:
+                    # Editable: add as Field
+                    field = Field(row=row, col=field_col, length=hf["length"],
+                                 field_type=hf["field_type"], label=hf["label"],
+                                 default=hf["value"])
+                    screen.add_field(field)
 
         # Action codes legend
         if self.actions:
