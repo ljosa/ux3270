@@ -127,8 +127,16 @@ inventory-app --help
 | Work-with Lists | Enter | Process actions |
 | Work-with Lists | F6 | Add new record |
 | Tabular Entry | Tab | Next editable cell |
-| Tabular Entry | Up/Down | Move between rows |
+| Tabular Entry | Shift+Tab | Previous editable cell |
 | Tabular Entry | Enter | Submit all values |
+
+## Terminal Width
+
+Tables and lists automatically adapt to terminal width:
+- Uses actual terminal width (not hardcoded 80 columns)
+- Short columns are preserved at natural width
+- Long columns are truncated to fit available space
+- Truncated content shows `>` indicator (e.g., "Very long tex>")
 
 ## IBM 3270 Colors
 
