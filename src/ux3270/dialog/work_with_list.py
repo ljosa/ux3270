@@ -5,7 +5,19 @@ import tty
 import termios
 from typing import List, Dict, Any, Optional, Callable
 
-from ux3270.panel import Colors
+from ux3270.panel import Colors, FieldType
+
+
+class HeaderField:
+    """Represents a header field definition."""
+
+    def __init__(self, label: str, length: int = 10, default: str = "",
+                 field_type: FieldType = FieldType.TEXT):
+        self.label = label
+        self.length = length
+        self.default = default
+        self.field_type = field_type
+        self.value = default
 
 
 class WorkWithList:
@@ -16,9 +28,12 @@ class WorkWithList:
     Users type action codes (2=Change, 4=Delete, etc.) and press Enter
     to process multiple actions at once.
 
+    Supports optional header fields above the list for filtering/positioning.
+
     Follows CUA conventions:
     - Panel ID at top-left, title centered
     - Instruction line below title
+    - Optional header fields for filtering
     - Action codes legend
     - Action input field per row
     - F6=Add for adding new records
@@ -26,16 +41,13 @@ class WorkWithList:
     - F3 to exit
     """
 
-    # CUA layout constants
+    # Base CUA layout constants (adjusted dynamically for header fields)
     TITLE_ROW = 0
     INSTRUCTION_ROW = 1
-    ACTIONS_ROW = 3      # Action codes legend
-    HEADER_ROW = 5       # Column headers
-    DATA_START_ROW = 7   # First data row
 
-    # Lines reserved for chrome
-    HEADER_LINES = 7     # Title + instruction + blank + actions + blank + header + separator
-    FOOTER_LINES = 3     # Message + separator + function keys
+    # Lines reserved for chrome (base, without header fields)
+    BASE_HEADER_LINES = 7  # Title + instruction + blank + actions + blank + header + separator
+    FOOTER_LINES = 3       # Message + separator + function keys
 
     def __init__(self, title: str = "", columns: Optional[List[str]] = None,
                  panel_id: str = "", instruction: str = ""):
@@ -57,6 +69,41 @@ class WorkWithList:
         self.add_callback: Optional[Callable] = None
         self.current_row = 0  # First visible row index
         self.action_inputs: List[str] = []  # Action code entered per row
+        self.header_fields: List[HeaderField] = []
+
+    def _get_layout(self) -> Dict[str, int]:
+        """Calculate layout row positions based on header fields."""
+        header_field_rows = len(self.header_fields)
+        return {
+            "title": 0,
+            "instruction": 1,
+            "header_fields_start": 3 if header_field_rows > 0 else -1,
+            "actions": 3 + header_field_rows + (1 if header_field_rows > 0 else 0),
+            "column_headers": 3 + header_field_rows + (1 if header_field_rows > 0 else 0) + 2,
+            "data_start": 3 + header_field_rows + (1 if header_field_rows > 0 else 0) + 4,
+            "header_lines": self.BASE_HEADER_LINES + header_field_rows + (1 if header_field_rows > 0 else 0),
+        }
+
+    def add_header_field(self, label: str, length: int = 10, default: str = "",
+                         field_type: FieldType = FieldType.TEXT) -> "WorkWithList":
+        """
+        Add a header field above the list (for filtering/positioning).
+
+        Args:
+            label: Field label
+            length: Field length
+            default: Default value
+            field_type: Field type (TEXT, NUMERIC)
+
+        Returns:
+            Self for method chaining
+        """
+        self.header_fields.append(HeaderField(label, length, default, field_type))
+        return self
+
+    def get_header_values(self) -> Dict[str, str]:
+        """Get current header field values."""
+        return {f.label: f.value for f in self.header_fields}
 
     def add_action(self, code: str, description: str) -> "WorkWithList":
         """
@@ -125,7 +172,8 @@ class WorkWithList:
 
     def _get_page_size(self, height: int) -> int:
         """Calculate number of data rows that fit on screen."""
-        return max(1, height - self.HEADER_LINES - self.FOOTER_LINES)
+        layout = self._get_layout()
+        return max(1, height - layout["header_lines"] - self.FOOTER_LINES)
 
     def _clear(self):
         """Clear the terminal screen."""
@@ -136,47 +184,62 @@ class WorkWithList:
         print(f"\033[{row + 1};{col + 1}H", end="", flush=True)
 
     def _render(self, page_size: int, height: int, width: int,
-                cursor_row: int, cursor_col: int, full_redraw: bool = True):
+                cursor_row: int, cursor_col: int, in_header: bool = False,
+                header_field_idx: int = 0, header_cursor_pos: int = 0,
+                full_redraw: bool = True):
         """Render the work-with list.
 
         Args:
             full_redraw: If True, clear screen and redraw everything.
                         If False, only update action fields and cursor.
         """
+        layout = self._get_layout()
         col_widths = self._calculate_widths()
 
         if full_redraw:
             self._clear()
 
             # Row 0: Panel ID (left) and Title (centered)
-            self._move_cursor(self.TITLE_ROW, 0)
+            self._move_cursor(layout["title"], 0)
             if self.panel_id:
                 print(f"{Colors.PROTECTED}{self.panel_id}{Colors.RESET}", end="", flush=True)
             if self.title:
                 title_col = max(0, (width - len(self.title)) // 2)
-                self._move_cursor(self.TITLE_ROW, title_col)
+                self._move_cursor(layout["title"], title_col)
                 print(f"{Colors.title(self.title)}", end="", flush=True)
 
             # Row 1: Instruction
-            self._move_cursor(self.INSTRUCTION_ROW, 0)
+            self._move_cursor(layout["instruction"], 0)
             print(f"{Colors.PROTECTED}{self.instruction}{Colors.RESET}", end="", flush=True)
 
-            # Row 3: Action codes legend
+            # Header fields (if any)
+            if self.header_fields:
+                for i, field in enumerate(self.header_fields):
+                    self._move_cursor(layout["header_fields_start"] + i, 2)
+                    print(f"{Colors.PROTECTED}{field.label} . . .{Colors.RESET} ", end="", flush=True)
+                    # Input field
+                    val = field.value
+                    remaining = field.length - len(val)
+                    print(f"{Colors.INPUT}{val}", end="", flush=True)
+                    if remaining > 0:
+                        print(f"{Colors.DIM}{'_' * remaining}{Colors.RESET}", end="", flush=True)
+
+            # Action codes legend
             if self.actions:
-                self._move_cursor(self.ACTIONS_ROW, 2)
+                self._move_cursor(layout["actions"], 2)
                 legend_parts = [f"{code}={desc}" for code, desc in self.actions.items()]
                 print(f"{Colors.PROTECTED}{('  ').join(legend_parts)}{Colors.RESET}", end="", flush=True)
 
-            # Row 5: Column headers
-            self._move_cursor(self.HEADER_ROW, 0)
+            # Column headers
+            self._move_cursor(layout["column_headers"], 0)
             header_parts = [Colors.header("Act")]
             for i, col in enumerate(self.columns):
                 w = col_widths[i] if i < len(col_widths) else len(col)
                 header_parts.append(Colors.header(col.ljust(w)))
             print("  " + "  ".join(header_parts), end="", flush=True)
 
-            # Row 6: Separator
-            self._move_cursor(self.HEADER_ROW + 1, 0)
+            # Separator
+            self._move_cursor(layout["column_headers"] + 1, 0)
             sep_parts = ["───"]  # Action column
             for w in col_widths:
                 sep_parts.append("─" * w)
@@ -188,7 +251,7 @@ class WorkWithList:
 
             for i, row in enumerate(visible_rows):
                 abs_idx = self.current_row + i
-                self._move_cursor(self.DATA_START_ROW + i, 0)
+                self._move_cursor(layout["data_start"] + i, 0)
 
                 # Action input field (green, underscore if empty)
                 action_val = self.action_inputs[abs_idx] if abs_idx < len(self.action_inputs) else ""
@@ -230,18 +293,34 @@ class WorkWithList:
                     hints.append(Colors.info("F8=Down"))
             print("  ".join(hints), end="", flush=True)
         else:
-            # Partial update: just refresh action input fields
+            # Partial update: refresh header fields and action input fields
+            if self.header_fields:
+                for i, field in enumerate(self.header_fields):
+                    # Calculate position after label
+                    label_len = len(field.label) + 7  # " . . . "
+                    self._move_cursor(layout["header_fields_start"] + i, 2 + label_len)
+                    val = field.value
+                    remaining = field.length - len(val)
+                    print(f"{Colors.INPUT}{val}", end="", flush=True)
+                    if remaining > 0:
+                        print(f"{Colors.DIM}{'_' * remaining}{Colors.RESET}", end="", flush=True)
+
             end_row = min(self.current_row + page_size, len(self.rows))
             for i in range(end_row - self.current_row):
                 abs_idx = self.current_row + i
-                self._move_cursor(self.DATA_START_ROW + i, 2)
+                self._move_cursor(layout["data_start"] + i, 2)
                 action_val = self.action_inputs[abs_idx] if abs_idx < len(self.action_inputs) else ""
                 action_display = action_val.ljust(1) if action_val else "_"
                 print(f"{Colors.DEFAULT}{action_display}{Colors.RESET}", end="", flush=True)
 
-        # Position cursor at current action input field
-        if 0 <= cursor_row < page_size and cursor_row + self.current_row < len(self.rows):
-            self._move_cursor(self.DATA_START_ROW + cursor_row, 2 + cursor_col)
+        # Position cursor
+        if in_header and self.header_fields:
+            field = self.header_fields[header_field_idx]
+            label_len = len(field.label) + 7
+            self._move_cursor(layout["header_fields_start"] + header_field_idx,
+                            2 + label_len + header_cursor_pos)
+        elif 0 <= cursor_row < page_size and cursor_row + self.current_row < len(self.rows):
+            self._move_cursor(layout["data_start"] + cursor_row, 2 + cursor_col)
 
     def _read_key(self) -> str:
         """Read a key, handling escape sequences."""
@@ -255,6 +334,16 @@ class WorkWithList:
                     return 'UP'
                 elif seq2 == 'B':
                     return 'DOWN'
+                elif seq2 == 'C':
+                    return 'RIGHT'
+                elif seq2 == 'D':
+                    return 'LEFT'
+                elif seq2 == 'H':
+                    return 'HOME'
+                elif seq2 == 'F':
+                    return 'END'
+                elif seq2 == 'Z':
+                    return 'BACKTAB'
                 elif seq2 == '1':
                     seq3 = sys.stdin.read(1)
                     seq4 = sys.stdin.read(1)  # ~
@@ -266,6 +355,9 @@ class WorkWithList:
                         return 'F7'
                     elif seq3 == '9':
                         return 'F8'
+                elif seq2 == '3':
+                    sys.stdin.read(1)  # ~
+                    return 'DELETE'
             elif seq1 == 'O':
                 seq2 = sys.stdin.read(1)
                 if seq2 == 'R':
@@ -282,15 +374,19 @@ class WorkWithList:
 
         Returns:
             List of {"action": code, "row": row_data} for each row with an action,
+            empty list if Enter pressed with no actions (check get_header_values()),
             or None if user exits with F3.
         """
         height, width = self._get_terminal_size()
         page_size = self._get_page_size(height)
 
-        # Cursor position within visible area
-        cursor_row = 0  # Row within current page
+        # Cursor state
+        in_header = len(self.header_fields) > 0  # Start in header if fields exist
+        header_field_idx = 0
+        header_cursor_pos = 0
+        cursor_row = 0  # Row within current page (for list area)
         cursor_col = 0  # Column within action field (always 0 for single char)
-        need_full_redraw = True  # First render is always full
+        need_full_redraw = True
 
         fd = sys.stdin.fileno()
         old_settings = termios.tcgetattr(fd)
@@ -298,63 +394,124 @@ class WorkWithList:
         try:
             while True:
                 self._render(page_size, height, width, cursor_row, cursor_col,
+                            in_header, header_field_idx, header_cursor_pos,
                             full_redraw=need_full_redraw)
-                need_full_redraw = False  # Reset after render
+                need_full_redraw = False
                 tty.setraw(fd)
 
                 key = self._read_key()
                 termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
 
-                abs_row = self.current_row + cursor_row
-
-                if key == 'F3' or key == '\x03':  # F3 or Ctrl+C
+                if key == 'F3' or key == '\x03':
                     self._clear()
                     return None
 
                 elif key == 'F6' and self.add_callback:
                     self._clear()
                     self.add_callback()
-                    # Return empty list so caller's loop rebuilds with fresh data
                     return []
 
                 elif key == 'F7':
                     if self.current_row > 0:
                         self.current_row = max(0, self.current_row - page_size)
                         cursor_row = 0
+                        in_header = False
                         need_full_redraw = True
 
                 elif key == 'F8':
                     if self.current_row + page_size < len(self.rows):
                         self.current_row = min(len(self.rows) - 1, self.current_row + page_size)
                         cursor_row = 0
+                        in_header = False
                         need_full_redraw = True
 
+                elif key == '\t':
+                    if in_header:
+                        if header_field_idx < len(self.header_fields) - 1:
+                            header_field_idx += 1
+                            header_cursor_pos = 0
+                        else:
+                            # Move to list area
+                            in_header = False
+                            cursor_row = 0
+                    else:
+                        # Move to next row in list
+                        abs_row = self.current_row + cursor_row
+                        if abs_row < len(self.rows) - 1:
+                            if cursor_row < page_size - 1:
+                                cursor_row += 1
+                            elif self.current_row + page_size < len(self.rows):
+                                self.current_row += 1
+                                need_full_redraw = True
+
+                elif key == 'BACKTAB':
+                    if in_header:
+                        if header_field_idx > 0:
+                            header_field_idx -= 1
+                            header_cursor_pos = len(self.header_fields[header_field_idx].value)
+                    else:
+                        if cursor_row > 0:
+                            cursor_row -= 1
+                        elif self.header_fields:
+                            in_header = True
+                            header_field_idx = len(self.header_fields) - 1
+                            header_cursor_pos = len(self.header_fields[header_field_idx].value)
+
                 elif key == 'UP':
-                    if cursor_row > 0:
-                        cursor_row -= 1
-                        # No full redraw needed - just move cursor
-                    elif self.current_row > 0:
-                        self.current_row -= 1
-                        need_full_redraw = True  # Page scrolled
+                    if in_header:
+                        if header_field_idx > 0:
+                            header_field_idx -= 1
+                            header_cursor_pos = min(header_cursor_pos,
+                                                   len(self.header_fields[header_field_idx].value))
+                    else:
+                        if cursor_row > 0:
+                            cursor_row -= 1
+                        elif self.current_row > 0:
+                            self.current_row -= 1
+                            need_full_redraw = True
+                        elif self.header_fields:
+                            in_header = True
+                            header_field_idx = len(self.header_fields) - 1
+                            header_cursor_pos = 0
 
                 elif key == 'DOWN':
-                    if cursor_row < page_size - 1 and abs_row < len(self.rows) - 1:
-                        cursor_row += 1
-                        # No full redraw needed - just move cursor
-                    elif self.current_row + page_size < len(self.rows):
-                        self.current_row += 1
-                        need_full_redraw = True  # Page scrolled
-
-                elif key == '\t':  # Tab - move to next row
-                    if abs_row < len(self.rows) - 1:
-                        if cursor_row < page_size - 1:
+                    if in_header:
+                        if header_field_idx < len(self.header_fields) - 1:
+                            header_field_idx += 1
+                            header_cursor_pos = min(header_cursor_pos,
+                                                   len(self.header_fields[header_field_idx].value))
+                        elif self.rows:
+                            in_header = False
+                            cursor_row = 0
+                    else:
+                        abs_row = self.current_row + cursor_row
+                        if cursor_row < page_size - 1 and abs_row < len(self.rows) - 1:
                             cursor_row += 1
                         elif self.current_row + page_size < len(self.rows):
                             self.current_row += 1
-                            cursor_row = 0
                             need_full_redraw = True
 
-                elif key in ('\r', '\n'):  # Enter - process actions
+                elif key == 'LEFT':
+                    if in_header:
+                        if header_cursor_pos > 0:
+                            header_cursor_pos -= 1
+
+                elif key == 'RIGHT':
+                    if in_header:
+                        field = self.header_fields[header_field_idx]
+                        if header_cursor_pos < len(field.value):
+                            header_cursor_pos += 1
+
+                elif key == 'HOME':
+                    if in_header:
+                        header_cursor_pos = 0
+
+                elif key == 'END':
+                    if in_header:
+                        header_cursor_pos = len(self.header_fields[header_field_idx].value)
+
+                elif key in ('\r', '\n'):
+                    # Check for actions
                     results = []
                     for i, action in enumerate(self.action_inputs):
                         if action and action.upper() in self.actions:
@@ -365,23 +522,46 @@ class WorkWithList:
                     if results:
                         self._clear()
                         return results
-                    # If no actions entered, just continue
+                    # No actions - return empty (caller can check header values)
+                    self._clear()
+                    return []
 
-                elif key == '\x7f' or key == '\x08':  # Backspace/Delete
-                    if abs_row < len(self.action_inputs):
-                        self.action_inputs[abs_row] = ""
-                    # Partial redraw will update action field
+                elif key == '\x7f' or key == '\x08':  # Backspace
+                    if in_header:
+                        field = self.header_fields[header_field_idx]
+                        if header_cursor_pos > 0:
+                            field.value = field.value[:header_cursor_pos - 1] + field.value[header_cursor_pos:]
+                            header_cursor_pos -= 1
+                    else:
+                        abs_row = self.current_row + cursor_row
+                        if abs_row < len(self.action_inputs):
+                            self.action_inputs[abs_row] = ""
+
+                elif key == 'DELETE':
+                    if in_header:
+                        field = self.header_fields[header_field_idx]
+                        if header_cursor_pos < len(field.value):
+                            field.value = field.value[:header_cursor_pos] + field.value[header_cursor_pos + 1:]
 
                 elif len(key) == 1 and key.isprintable():
-                    # Type action code
-                    if abs_row < len(self.action_inputs):
-                        self.action_inputs[abs_row] = key.upper()
-                        # Auto-advance to next row
-                        if cursor_row < page_size - 1 and abs_row < len(self.rows) - 1:
-                            cursor_row += 1
-                        elif self.current_row + page_size < len(self.rows):
-                            self.current_row += 1
-                            need_full_redraw = True
+                    if in_header:
+                        field = self.header_fields[header_field_idx]
+                        if field.field_type == FieldType.NUMERIC:
+                            if not (key.isdigit() or key in '.-'):
+                                continue
+                        if len(field.value) < field.length:
+                            field.value = field.value[:header_cursor_pos] + key + field.value[header_cursor_pos:]
+                            header_cursor_pos += 1
+                    else:
+                        abs_row = self.current_row + cursor_row
+                        if abs_row < len(self.action_inputs):
+                            self.action_inputs[abs_row] = key.upper()
+                            # Auto-advance
+                            if cursor_row < page_size - 1 and abs_row < len(self.rows) - 1:
+                                cursor_row += 1
+                            elif self.current_row + page_size < len(self.rows):
+                                self.current_row += 1
+                                need_full_redraw = True
 
         finally:
             termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)

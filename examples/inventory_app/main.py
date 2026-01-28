@@ -241,6 +241,7 @@ class InventoryApp:
 
     def view_items(self):
         """View all items in inventory with work-with actions."""
+        position_to = ""  # Track position filter across refreshes
         while True:
             items = self.db.list_items()
 
@@ -248,12 +249,17 @@ class InventoryApp:
                 show_message("NO ITEMS IN INVENTORY", "warning")
                 return
 
+            # Filter items if position_to is set
+            if position_to:
+                items = [i for i in items if i["sku"].upper().startswith(position_to.upper())]
+
             wwl = WorkWithList(
                 "WORK WITH INVENTORY",
                 columns=["SKU", "Name", "Qty", "Price", "Location"],
                 panel_id="INV010",
                 instruction="Type action code, press Enter to process."
             )
+            wwl.add_header_field("Position to", length=15, default=position_to)
             wwl.add_action("2", "Change")
             wwl.add_action("4", "Delete")
             wwl.add_action("5", "Display")
@@ -270,6 +276,8 @@ class InventoryApp:
                 )
 
             result = wwl.show()
+            # Update position filter from header field
+            position_to = wwl.get_header_values().get("Position to", "")
 
             if result is None:
                 return  # User pressed F3
