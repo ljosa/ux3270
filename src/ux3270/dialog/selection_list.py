@@ -3,7 +3,7 @@
 import sys
 import tty
 import termios
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, Callable
 
 from ux3270.panel import Colors
 
@@ -20,7 +20,7 @@ class SelectionList:
     - Panel ID at top-left, title centered
     - Column headers in intensified text
     - Action column for selection (S=Select)
-    - F3=Cancel, F7=Backward, F8=Forward
+    - F3=Cancel, F6=Add (optional), F7=Backward, F8=Forward
     - Enter with 'S' action code selects the item
     """
 
@@ -51,6 +51,25 @@ class SelectionList:
         self.col_widths: List[int] = []
         self.current_row = 0  # First visible row
         self.action_col_width = 3  # Width for "S" action column
+        self.add_callback: Optional[Callable] = None
+
+    def set_add_callback(self, callback: Callable) -> "SelectionList":
+        """
+        Set callback for F6=Add.
+
+        The callback should add a new item and return it as a dictionary
+        with the same keys as the list columns. If the callback returns
+        an item, it will be returned as the selection. If it returns None,
+        the selection list returns None.
+
+        Args:
+            callback: Function to call when F6 is pressed.
+
+        Returns:
+            Self for method chaining
+        """
+        self.add_callback = callback
+        return self
 
     def add_row(self, **values) -> "SelectionList":
         """
@@ -213,7 +232,10 @@ class SelectionList:
 
         # Function keys (height-1)
         self._move_cursor(height - 1, 0)
-        hints = [Colors.info("F3=Cancel"), Colors.info("Enter=Select")]
+        hints = [Colors.info("F3=Cancel")]
+        if self.add_callback:
+            hints.append(Colors.info("F6=Add"))
+        hints.append(Colors.info("Enter=Select"))
         if len(self.rows) > page_size:
             if self.current_row > 0:
                 hints.append(Colors.info("F7=Bkwd"))
@@ -238,6 +260,8 @@ class SelectionList:
                     seq4 = sys.stdin.read(1)
                     if seq3 == '3':
                         return 'F3'
+                    elif seq3 == '7':
+                        return 'F6'
                     elif seq3 == '8':
                         return 'F7'
                     elif seq3 == '9':
@@ -252,6 +276,8 @@ class SelectionList:
                 seq2 = sys.stdin.read(1)
                 if seq2 == 'R':
                     return 'F3'
+                elif seq2 == 'Q':
+                    return 'F6'
             return 'ESC'
 
         return ch
@@ -286,6 +312,16 @@ class SelectionList:
                 if key == 'F3' or key == '\x03':
                     # Cancel
                     break
+
+                elif key == 'F6' and self.add_callback:
+                    # Add new item
+                    self.clear()
+                    result = self.add_callback()
+                    if result:
+                        # Return the new item as the selection
+                        return result
+                    # Add was cancelled, return None
+                    return None
 
                 elif key in ('\r', '\n'):
                     # Enter - check for action or select current row

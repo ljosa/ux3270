@@ -314,7 +314,8 @@ class WorkWithList:
                 elif key == 'F6' and self.add_callback:
                     self._clear()
                     self.add_callback()
-                    need_full_redraw = True  # Redraw after callback
+                    # Return empty list so caller's loop rebuilds with fresh data
+                    return []
 
                 elif key == 'F7':
                     if self.current_row > 0:
