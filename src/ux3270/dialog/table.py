@@ -113,11 +113,15 @@ class Table:
         self.rows.append(list(values))
         return self
 
-    def _calculate_widths(self) -> List[int]:
-        """Calculate column widths based on content."""
+    def _calculate_widths(self, available_width: int) -> List[int]:
+        """Calculate column widths based on content, fitting within available width.
+
+        Short columns are preserved; long columns are truncated to fit.
+        """
         if not self._columns:
             return []
 
+        # Calculate natural widths
         widths = []
         for col in self._columns:
             if col.width is not None:
@@ -130,6 +134,36 @@ class Table:
                 if i < len(widths) and self._columns[i].width is None:
                     widths[i] = max(widths[i], len(str(val)))
 
+        # Check if we need to shrink to fit
+        # Total width = indent(2) + sum(widths) + separators(2 per gap)
+        num_cols = len(widths)
+        separator_width = 2 * (num_cols - 1) if num_cols > 1 else 0
+        indent = 2
+        total_width = indent + sum(widths) + separator_width
+
+        if total_width > available_width and num_cols > 0:
+            excess = total_width - available_width
+
+            # Shrink longest columns first until it fits
+            # Minimum column width: header name length or 5, whichever is smaller
+            min_widths = [min(len(col.name), 5) for col in self._columns]
+
+            while excess > 0:
+                # Find the longest column that can still be shrunk
+                max_width = 0
+                max_idx = -1
+                for i, w in enumerate(widths):
+                    if w > min_widths[i] and w > max_width:
+                        max_width = w
+                        max_idx = i
+
+                if max_idx < 0:
+                    break  # Can't shrink any more
+
+                # Shrink the longest column by 1
+                widths[max_idx] -= 1
+                excess -= 1
+
         return widths
 
     def _get_terminal_size(self) -> tuple:
@@ -141,10 +175,18 @@ class Table:
         except Exception:
             return 24, 80
 
+    def _truncate(self, text: str, max_width: int) -> str:
+        """Truncate text to fit width, adding '>' indicator if truncated."""
+        if len(text) <= max_width:
+            return text
+        if max_width <= 1:
+            return text[:max_width]
+        return text[:max_width - 1] + ">"
+
     def _build_screen(self, page: int, page_size: int, height: int, width: int) -> Screen:
         """Build a Screen with all text and fields for the current page."""
         screen = Screen()
-        col_widths = self._calculate_widths()
+        col_widths = self._calculate_widths(width)
 
         # Calculate layout
         header_rows = len(self._header_fields)
@@ -198,10 +240,11 @@ class Table:
             header_parts = []
             for i, col in enumerate(self._columns):
                 w = col_widths[i] if i < len(col_widths) else len(col.name)
+                name = self._truncate(col.name, w)
                 if col.align == "right":
-                    header_parts.append(col.name.rjust(w))
+                    header_parts.append(name.rjust(w))
                 else:
-                    header_parts.append(col.name.ljust(w))
+                    header_parts.append(name.ljust(w))
             header_text = "  ".join(header_parts)
             screen.add_text(column_headers_row, 2, header_text, Colors.INTENSIFIED)
 
@@ -221,10 +264,11 @@ class Table:
             for j, val in enumerate(data_row):
                 w = col_widths[j] if j < len(col_widths) else len(str(val))
                 col = self._columns[j] if j < len(self._columns) else None
+                text = self._truncate(str(val), w)
                 if col and col.align == "right":
-                    row_parts.append(str(val).rjust(w))
+                    row_parts.append(text.rjust(w))
                 else:
-                    row_parts.append(str(val).ljust(w))
+                    row_parts.append(text.ljust(w))
             row_text = "  ".join(row_parts)
             screen.add_text(screen_row, 2, row_text, Colors.DEFAULT)
 

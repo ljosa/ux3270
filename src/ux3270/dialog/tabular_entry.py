@@ -128,6 +128,14 @@ class TabularEntry:
             pos += col.width + 2  # width + 2 spaces
         return pos
 
+    def _truncate(self, text: str, max_width: int) -> str:
+        """Truncate text to fit width, adding '>' indicator if truncated."""
+        if len(text) <= max_width:
+            return text
+        if max_width <= 1:
+            return text[:max_width]
+        return text[:max_width - 1] + ">"
+
     def _build_screen(self, page: int, page_size: int, height: int, width: int) -> Screen:
         """Build a Screen with all text and fields for the current page."""
         screen = Screen()
@@ -152,9 +160,9 @@ class TabularEntry:
         header_parts = []
         for col in self.columns:
             if col.editable and col.required:
-                header_parts.append(f"*{col.name}"[:col.width].ljust(col.width))
+                header_parts.append(self._truncate(f"*{col.name}", col.width).ljust(col.width))
             else:
-                header_parts.append(col.name[:col.width].ljust(col.width))
+                header_parts.append(self._truncate(col.name, col.width).ljust(col.width))
         header_text = "  ".join(header_parts)
         screen.add_text(header_row, 2, header_text, Colors.INTENSIFIED)
 
@@ -189,7 +197,7 @@ class TabularEntry:
                     screen.add_field(field)
                 else:
                     # Static text
-                    val = str(row.get(col.name, ""))[:col.width].ljust(col.width)
+                    val = self._truncate(str(row.get(col.name, "")), col.width).ljust(col.width)
                     screen.add_text(screen_row, col_pos, val, Colors.PROTECTED)
 
                 col_pos += col.width + 2  # width + 2 spaces

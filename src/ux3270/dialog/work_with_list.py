@@ -73,9 +73,12 @@ class WorkWithList:
         self.rows.append(values)
         return self
 
-    def _calculate_widths(self) -> List[int]:
+    def _calculate_widths(self, available_width: int) -> List[int]:
+        """Calculate column widths, fitting within available width."""
         if not self._columns:
             return []
+
+        # Calculate natural widths
         widths = []
         for col in self._columns:
             if col.width is not None:
@@ -86,7 +89,44 @@ class WorkWithList:
             for i, col in enumerate(self._columns):
                 if col.name in row and col.width is None:
                     widths[i] = max(widths[i], len(str(row[col.name])))
+
+        # Check if we need to shrink to fit
+        # Total = indent(2) + Opt(3) + gap(2) + sum(widths) + gaps(2 per col)
+        num_cols = len(widths)
+        opt_width = 3  # "Opt" column
+        separator_width = 2 * num_cols  # 2 spaces before each data column
+        indent = 2
+        total_width = indent + opt_width + separator_width + sum(widths)
+
+        if total_width > available_width and num_cols > 0:
+            excess = total_width - available_width
+
+            # Shrink longest columns first
+            min_widths = [min(len(col.name), 5) for col in self._columns]
+
+            while excess > 0:
+                max_width = 0
+                max_idx = -1
+                for i, w in enumerate(widths):
+                    if w > min_widths[i] and w > max_width:
+                        max_width = w
+                        max_idx = i
+
+                if max_idx < 0:
+                    break
+
+                widths[max_idx] -= 1
+                excess -= 1
+
         return widths
+
+    def _truncate(self, text: str, max_width: int) -> str:
+        """Truncate text to fit width, adding '>' indicator if truncated."""
+        if len(text) <= max_width:
+            return text
+        if max_width <= 1:
+            return text[:max_width]
+        return text[:max_width - 1] + ">"
 
     def _get_terminal_size(self) -> tuple:
         try:
@@ -99,7 +139,7 @@ class WorkWithList:
     def _build_screen(self, page: int, page_size: int, height: int, width: int) -> Screen:
         """Build a Screen with all text and fields for the current page."""
         screen = Screen()
-        col_widths = self._calculate_widths()
+        col_widths = self._calculate_widths(width)
 
         # Calculate layout
         header_rows = len(self._header_fields)
@@ -156,13 +196,13 @@ class WorkWithList:
 
         # Column headers
         header_text = "Opt"
-        col_pos = 2 + 3 + 2  # After "Opt" + spacing
         for i, col in enumerate(self._columns):
             w = col_widths[i] if i < len(col_widths) else len(col.name)
+            name = self._truncate(col.name, w)
             if col.align == "right":
-                header_text += "  " + col.name.rjust(w)
+                header_text += "  " + name.rjust(w)
             else:
-                header_text += "  " + col.name.ljust(w)
+                header_text += "  " + name.ljust(w)
         screen.add_text(column_headers_row, 2, header_text, Colors.INTENSIFIED)
 
         # Separator (dashes under each column)
@@ -188,7 +228,7 @@ class WorkWithList:
             col_pos = 2 + 3 + 2  # After Opt field + spacing
             for j, col in enumerate(self._columns):
                 w = col_widths[j] if j < len(col_widths) else 10
-                val = str(data_row.get(col.name, ""))
+                val = self._truncate(str(data_row.get(col.name, "")), w)
                 if col.align == "right":
                     display_val = val.rjust(w)
                 else:
