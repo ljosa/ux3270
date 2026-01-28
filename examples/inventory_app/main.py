@@ -5,7 +5,7 @@ import argparse
 import random
 
 from ux3270.panel import FieldType
-from ux3270.dialog import Menu, Form, Table, WorkWithList, SelectionList, show_message
+from ux3270.dialog import Menu, Form, Table, TabularEntry, WorkWithList, SelectionList, show_message
 from .database import InventoryDB
 
 
@@ -71,6 +71,7 @@ class InventoryApp:
         menu.add_item("4", "Update Item", self.update_item)
         menu.add_item("5", "Delete Item", self.delete_item)
         menu.add_item("6", "Adjust Quantity", self.adjust_quantity)
+        menu.add_item("7", "Stock Take", self.stock_take)
 
         menu.run()
         self.db.close()
@@ -492,6 +493,56 @@ class InventoryApp:
             show_message(f"QUANTITY UPDATED: {item['quantity']} -> {new_qty}", "success")
         except Exception as e:
             show_message(f"ERROR: {e}", "error")
+
+    def stock_take(self):
+        """Perform stock take - bulk quantity entry for physical inventory count."""
+        items = self.db.list_items()
+
+        if not items:
+            show_message("NO ITEMS IN INVENTORY", "warning")
+            return
+
+        te = TabularEntry(
+            "STOCK TAKE",
+            panel_id="INV006",
+            instruction="Enter actual counted quantities. Leave blank to skip."
+        )
+        te.add_column("SKU", width=12)
+        te.add_column("Name", width=25)
+        te.add_column("Location", width=15)
+        te.add_column("System Qty", width=10)
+        te.add_column("Actual Qty", width=10, editable=True, field_type=FieldType.NUMERIC)
+
+        for item in items:
+            te.add_row(
+                SKU=item["sku"],
+                Name=item["name"][:25],
+                Location=item["location"][:15],
+                **{"System Qty": str(item["quantity"]), "Actual Qty": ""}
+            )
+
+        result = te.show()
+        if result is None:
+            return  # User cancelled
+
+        # Update quantities for items where actual qty was entered
+        updated = 0
+        for i, row in enumerate(result):
+            actual_qty = row.get("Actual Qty", "").strip()
+            if actual_qty:
+                try:
+                    new_qty = int(actual_qty)
+                    item = items[i]
+                    if new_qty != item["quantity"]:
+                        self.db.update_item(item["id"], quantity=new_qty)
+                        updated += 1
+                except ValueError:
+                    pass  # Skip invalid entries
+
+        if updated > 0:
+            show_message(f"STOCK TAKE COMPLETE - {updated} ITEM(S) UPDATED", "success")
+        else:
+            show_message("NO CHANGES MADE", "info")
 
 
 def load_sample_data(db: InventoryDB) -> int:

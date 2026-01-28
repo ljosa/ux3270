@@ -25,7 +25,7 @@ uv venv && uv pip install -e .
 ## Quick Start
 
 ```python
-from ux3270.dialog import Menu, Form, Table, WorkWithList, SelectionList, show_message
+from ux3270.dialog import Menu, Form, Table, TabularEntry, WorkWithList, SelectionList, show_message
 
 # Create a form with help text
 form = Form("DATA ENTRY", help_text="Enter your information")
@@ -73,6 +73,16 @@ table.add_row("001", "Item 1", "Active")
 table.add_row("002", "Item 2", "Inactive")
 table.show()  # F7/F8 to page up/down
 
+# Tabular entry (table with editable columns)
+te = TabularEntry("PORTFOLIO UPDATE", panel_id="PORT01")
+te.add_column("Ticker", width=8)
+te.add_column("Name", width=20)
+te.add_column("New Amount", width=12, editable=True, required=True)
+te.add_column("Previous", width=12)
+te.add_row(Ticker="AAPL", Name="Apple Inc", Previous="1,234.56")
+te.add_row(Ticker="GOOGL", Name="Alphabet", Previous="5,678.90")
+result = te.show()  # Tab between cells, Enter to submit
+
 # Show a message
 show_message("Operation completed", msg_type="success")
 ```
@@ -116,6 +126,9 @@ inventory-app --help
 | Work-with Lists | 1-9, A-Z | Enter action code |
 | Work-with Lists | Enter | Process actions |
 | Work-with Lists | F6 | Add new record |
+| Tabular Entry | Tab | Next editable cell |
+| Tabular Entry | Up/Down | Move between rows |
+| Tabular Entry | Enter | Submit all values |
 
 ## IBM 3270 Colors
 
