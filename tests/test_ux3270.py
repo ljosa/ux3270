@@ -19,7 +19,11 @@ def test_table_display():
     print("TEST 1: Table Display")
     print("="*60)
     
-    table = Table("SAMPLE DATA TABLE", ["ID", "Name", "Value", "Status"])
+    table = Table("SAMPLE DATA TABLE")
+    table.add_column("ID")
+    table.add_column("Name")
+    table.add_column("Value", align="right")
+    table.add_column("Status")
     table.add_row("001", "Item One", "$10.00", "Active")
     table.add_row("002", "Item Two", "$25.50", "Pending")
     table.add_row("003", "Item Three", "$99.99", "Active")

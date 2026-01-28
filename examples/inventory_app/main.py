@@ -90,10 +90,14 @@ class InventoryApp:
 
         selection = SelectionList(
             "SELECT ITEM",
-            columns=["ID", "SKU", "Name", "Qty", "Location"],
             panel_id="INV099",
             instruction="Type S to select, Enter to confirm, F3 to cancel"
         )
+        selection.add_column("ID")
+        selection.add_column("SKU")
+        selection.add_column("Name")
+        selection.add_column("Qty", align="right")
+        selection.add_column("Location")
 
         for item in items:
             selection.add_row(

@@ -48,23 +48,17 @@ class Table:
     HEADER_LINES = 4     # Title + blank + column header + separator
     FOOTER_LINES = 3     # Message + separator + function keys
 
-    def __init__(self, title: str = "", columns: Optional[List[str]] = None,
-                 panel_id: str = ""):
+    def __init__(self, title: str = "", panel_id: str = ""):
         """
         Initialize a table.
 
         Args:
             title: Table title (displayed in uppercase per IBM convention)
-            columns: List of column headers. For more control, use add_column() instead.
             panel_id: Optional panel identifier (shown at top-left per CUA)
         """
         self.title = title.upper() if title else ""
         self.panel_id = panel_id.upper() if panel_id else ""
-        # Convert simple column names to TableColumn objects
         self._columns: List[TableColumn] = []
-        if columns:
-            for col in columns:
-                self._columns.append(TableColumn(col))
         self.rows: List[List[str]] = []
         self.col_widths: List[int] = []
         self.current_row = 0  # First visible row index

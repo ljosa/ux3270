@@ -52,7 +52,11 @@ def example_table():
     """Example using Table display."""
     print("\n=== Table Display Example ===\n")
 
-    table = Table("EMPLOYEE LIST", ["ID", "Name", "Department", "Status"])
+    table = Table("EMPLOYEE LIST")
+    table.add_column("ID")
+    table.add_column("Name")
+    table.add_column("Department")
+    table.add_column("Status")
     table.add_row("001", "Alice Johnson", "Engineering", "Active")
     table.add_row("002", "Bob Smith", "Marketing", "Active")
     table.add_row("003", "Carol Davis", "Sales", "On Leave")

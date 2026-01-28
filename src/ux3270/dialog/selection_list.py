@@ -3,9 +3,19 @@
 import sys
 import tty
 import termios
-from typing import List, Optional, Dict, Any, Callable
+from typing import List, Optional, Dict, Any, Callable, Literal
 
 from ux3270.panel import Colors
+
+
+class SelectionColumn:
+    """Represents a column definition in a selection list."""
+
+    def __init__(self, name: str, width: Optional[int] = None,
+                 align: Literal["left", "right"] = "left"):
+        self.name = name
+        self.width = width
+        self.align = align
 
 
 class SelectionList:
@@ -32,26 +42,41 @@ class SelectionList:
     HEADER_LINES = 5     # Title + instruction + blank + headers + separator
     FOOTER_LINES = 3     # Message + separator + function keys
 
-    def __init__(self, title: str = "SELECTION LIST", columns: Optional[List[str]] = None,
-                 panel_id: str = "", instruction: str = "Type S to select item"):
+    def __init__(self, title: str = "SELECTION LIST", panel_id: str = "",
+                 instruction: str = "Type S to select item"):
         """
         Initialize a selection list.
 
         Args:
             title: List title (displayed in uppercase per CUA)
-            columns: Column headers (excluding the action column)
             panel_id: Optional panel identifier
             instruction: Instruction text
         """
         self.title = title.upper() if title else ""
         self.panel_id = panel_id.upper() if panel_id else ""
         self.instruction = instruction
-        self.columns = columns or []
+        self._columns: List[SelectionColumn] = []
         self.rows: List[Dict[str, Any]] = []
         self.col_widths: List[int] = []
         self.current_row = 0  # First visible row
         self.action_col_width = 3  # Width for "S" action column
         self.add_callback: Optional[Callable] = None
+
+    def add_column(self, name: str, width: Optional[int] = None,
+                   align: Literal["left", "right"] = "left") -> "SelectionList":
+        """
+        Add a column definition.
+
+        Args:
+            name: Column name (used as header and key in row data)
+            width: Display width (None = auto-calculate from content)
+            align: Text alignment ("left" or "right")
+
+        Returns:
+            Self for method chaining
+        """
+        self._columns.append(SelectionColumn(name, width, align))
+        return self
 
     def set_add_callback(self, callback: Callable) -> "SelectionList":
         """
@@ -99,15 +124,20 @@ class SelectionList:
 
     def _calculate_widths(self):
         """Calculate column widths based on content."""
-        if not self.columns:
+        if not self._columns:
             return
 
-        self.col_widths = [len(col) for col in self.columns]
+        self.col_widths = []
+        for col in self._columns:
+            if col.width is not None:
+                self.col_widths.append(col.width)
+            else:
+                self.col_widths.append(len(col.name))
 
         for row in self.rows:
-            for i, col in enumerate(self.columns):
-                if col in row:
-                    val_len = len(str(row[col]))
+            for i, col in enumerate(self._columns):
+                if col.name in row and col.width is None:
+                    val_len = len(str(row[col.name]))
                     if i < len(self.col_widths):
                         self.col_widths[i] = max(self.col_widths[i], val_len)
 
@@ -161,16 +191,19 @@ class SelectionList:
             print(f"{Colors.PROTECTED}{self.instruction}{Colors.RESET}", end="", flush=True)
 
         # Row 3: Column headers with action column
-        if self.columns:
+        if self._columns:
             self._move_cursor(self.HEADER_ROW, 0)
             # Action column header
             print(f"  {Colors.header('S')}", end="", flush=True)
             print(f" {Colors.PROTECTED}│{Colors.RESET} ", end="", flush=True)
             # Data column headers
             header_parts = []
-            for i, col in enumerate(self.columns):
-                w = self.col_widths[i] if i < len(self.col_widths) else len(col)
-                header_parts.append(Colors.header(col.ljust(w)))
+            for i, col in enumerate(self._columns):
+                w = self.col_widths[i] if i < len(self.col_widths) else len(col.name)
+                if col.align == "right":
+                    header_parts.append(Colors.header(col.name.rjust(w)))
+                else:
+                    header_parts.append(Colors.header(col.name.ljust(w)))
             print(f" {Colors.PROTECTED}│{Colors.RESET} ".join(header_parts), end="", flush=True)
 
             # Row 4: Separator
@@ -203,13 +236,17 @@ class SelectionList:
 
             # Data columns
             row_parts = []
-            for j, col in enumerate(self.columns):
+            for j, col in enumerate(self._columns):
                 w = self.col_widths[j] if j < len(self.col_widths) else 10
-                val = str(row.get(col, ""))
-                if i == cursor_row:
-                    row_parts.append(f"{Colors.REVERSE}{val.ljust(w)}{Colors.RESET}")
+                val = str(row.get(col.name, ""))
+                if col.align == "right":
+                    formatted = val.rjust(w)
                 else:
-                    row_parts.append(f"{Colors.DEFAULT}{val.ljust(w)}{Colors.RESET}")
+                    formatted = val.ljust(w)
+                if i == cursor_row:
+                    row_parts.append(f"{Colors.REVERSE}{formatted}{Colors.RESET}")
+                else:
+                    row_parts.append(f"{Colors.DEFAULT}{formatted}{Colors.RESET}")
             print(f" {Colors.PROTECTED}│{Colors.RESET} ".join(row_parts), end="", flush=True)
 
             if i == cursor_row:

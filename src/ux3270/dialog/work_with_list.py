@@ -67,26 +67,19 @@ class WorkWithList:
     BASE_HEADER_LINES = 7  # Title + instruction + blank + actions + blank + header + separator
     FOOTER_LINES = 3       # Message + separator + function keys
 
-    def __init__(self, title: str = "", columns: Optional[List[str]] = None,
-                 panel_id: str = "", instruction: str = ""):
+    def __init__(self, title: str = "", panel_id: str = "", instruction: str = ""):
         """
         Initialize a work-with list.
 
         Args:
             title: List title (displayed in uppercase per IBM convention)
-            columns: List of column headers (excluding the Action column).
-                    For more control, use add_column() instead.
             panel_id: Optional panel identifier (shown at top-left per CUA)
             instruction: Instruction text (default provided if empty)
         """
         self.title = title.upper() if title else ""
         self.panel_id = panel_id.upper() if panel_id else ""
         self.instruction = instruction or "Type action code, press Enter to process."
-        # Convert simple column names to ListColumn objects
         self._columns: List[ListColumn] = []
-        if columns:
-            for col in columns:
-                self._columns.append(ListColumn(col))
         self.rows: List[Dict[str, Any]] = []
         self.actions: Dict[str, str] = {}  # code -> description
         self.add_callback: Optional[Callable] = None
