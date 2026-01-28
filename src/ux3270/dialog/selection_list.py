@@ -176,10 +176,10 @@ class SelectionList:
                 header_text += "  " + col.name.ljust(w)
         screen.add_text(column_headers_row, 2, header_text, Colors.INTENSIFIED)
 
-        # Separator
-        sep = "───"  # Opt column
+        # Separator (dashes under each column)
+        sep = "---"  # Opt column
         for w in col_widths:
-            sep += "──" + "─" * w
+            sep += "  " + "-" * w
         screen.add_text(column_headers_row + 1, 2, sep, Colors.PROTECTED)
 
         # Data rows with Opt fields
@@ -216,7 +216,7 @@ class SelectionList:
             screen.add_text(height - 3, width - len(count_msg) - 1, count_msg, Colors.PROTECTED)
 
         # Separator
-        screen.add_text(height - 2, 0, "─" * width, Colors.DIM)
+        screen.add_text(height - 2, 0, "-" * width, Colors.DIM)
 
         # Function keys
         fkeys = ["F3=Cancel"]

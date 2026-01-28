@@ -185,12 +185,12 @@ class Table:
                     header_parts.append(col.name.rjust(w))
                 else:
                     header_parts.append(col.name.ljust(w))
-            header_text = " │ ".join(header_parts)
+            header_text = "  ".join(header_parts)
             screen.add_text(column_headers_row, 2, header_text, Colors.INTENSIFIED)
 
-            # Separator line
-            sep_parts = ["─" * w for w in col_widths]
-            sep_text = "─┼─".join(sep_parts)
+            # Separator line (dashes under each column)
+            sep_parts = ["-" * w for w in col_widths]
+            sep_text = "  ".join(sep_parts)
             screen.add_text(column_headers_row + 1, 2, sep_text, Colors.PROTECTED)
 
         # Data rows
@@ -208,7 +208,7 @@ class Table:
                     row_parts.append(str(val).rjust(w))
                 else:
                     row_parts.append(str(val).ljust(w))
-            row_text = " │ ".join(row_parts)
+            row_text = "  ".join(row_parts)
             screen.add_text(screen_row, 2, row_text, Colors.DEFAULT)
 
         # Row count message
@@ -220,7 +220,7 @@ class Table:
             screen.add_text(height - 3, width - len(count_msg) - 1, count_msg, Colors.PROTECTED)
 
         # Separator
-        screen.add_text(height - 2, 0, "─" * width, Colors.DIM)
+        screen.add_text(height - 2, 0, "-" * width, Colors.DIM)
 
         # Function keys
         fkeys = ["F3=Return"]

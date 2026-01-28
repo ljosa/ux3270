@@ -105,7 +105,7 @@ class Menu:
             screen.add_text(self.ITEMS_START_ROW + i, 4, f"- {item.label}", Colors.PROTECTED)
 
         # Separator (height-2)
-        screen.add_text(height - 2, 0, "─" * width, Colors.DIM)
+        screen.add_text(height - 2, 0, "-" * width, Colors.DIM)
 
         # Function keys (height-1)
         screen.add_text(height - 1, 0, "F3=Exit", Colors.PROTECTED)

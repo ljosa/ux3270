@@ -125,7 +125,7 @@ class TabularEntry:
         for i, col in enumerate(self.columns):
             if i == col_idx:
                 return pos
-            pos += col.width + 3  # width + separator
+            pos += col.width + 2  # width + 2 spaces
         return pos
 
     def _build_screen(self, page: int, page_size: int, height: int, width: int) -> Screen:
@@ -155,12 +155,12 @@ class TabularEntry:
                 header_parts.append(f"*{col.name}"[:col.width].ljust(col.width))
             else:
                 header_parts.append(col.name[:col.width].ljust(col.width))
-        header_text = " │ ".join(header_parts)
+        header_text = "  ".join(header_parts)
         screen.add_text(header_row, 2, header_text, Colors.INTENSIFIED)
 
-        # Separator
-        sep_parts = ["─" * col.width for col in self.columns]
-        sep_text = "─┼─".join(sep_parts)
+        # Separator (dashes under each column)
+        sep_parts = ["-" * col.width for col in self.columns]
+        sep_text = "  ".join(sep_parts)
         screen.add_text(header_row + 1, 2, sep_text, Colors.PROTECTED)
 
         # Data rows
@@ -192,11 +192,7 @@ class TabularEntry:
                     val = str(row.get(col.name, ""))[:col.width].ljust(col.width)
                     screen.add_text(screen_row, col_pos, val, Colors.PROTECTED)
 
-                # Add separator after each column except the last
-                if col_idx < len(self.columns) - 1:
-                    screen.add_text(screen_row, col_pos + col.width + 1, "│", Colors.PROTECTED)
-
-                col_pos += col.width + 3  # width + " │ "
+                col_pos += col.width + 2  # width + 2 spaces
 
         # Error line
         if self.error_message:
@@ -211,7 +207,7 @@ class TabularEntry:
             screen.add_text(height - 3, width - len(count_msg) - 1, count_msg, Colors.PROTECTED)
 
         # Separator
-        screen.add_text(height - 2, 0, "─" * width, Colors.DIM)
+        screen.add_text(height - 2, 0, "-" * width, Colors.DIM)
 
         # Function keys
         fkeys = ["F3=Cancel", "Enter=Submit"]

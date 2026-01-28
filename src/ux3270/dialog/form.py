@@ -141,7 +141,7 @@ class Form:
             screen.add_field(field)
 
         # Footer separator
-        screen.add_text(height - 2, 0, "─" * width, Colors.DIM)
+        screen.add_text(height - 2, 0, "-" * width, Colors.DIM)
 
         # Function keys
         fkeys_list = []
@@ -188,7 +188,7 @@ class Form:
                 row += 1
 
         # Footer
-        help_screen.add_text(height - 2, 0, "─" * width, Colors.DIM)
+        help_screen.add_text(height - 2, 0, "-" * width, Colors.DIM)
         help_screen.add_text(height - 1, 0, "Press Enter or F3 to return", Colors.PROTECTED)
 
         help_screen.show()

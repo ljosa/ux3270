@@ -66,7 +66,7 @@ class MessagePanel:
         screen.add_text(height - 3, 0, self.message, self._get_message_color())
 
         # Separator (height-2)
-        screen.add_text(height - 2, 0, "─" * width, Colors.DIM)
+        screen.add_text(height - 2, 0, "-" * width, Colors.DIM)
 
         # Function keys (height-1)
         screen.add_text(height - 1, 0, "Enter=Continue", Colors.PROTECTED)
