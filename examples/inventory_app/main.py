@@ -241,7 +241,7 @@ class InventoryApp:
 
     def view_items(self):
         """View all items in inventory with work-with actions."""
-        position_to = ""  # Track position filter across refreshes
+        position_to = ""  # Track position value across refreshes
         while True:
             items = self.db.list_items()
 
@@ -249,9 +249,13 @@ class InventoryApp:
                 show_message("NO ITEMS IN INVENTORY", "warning")
                 return
 
-            # Filter items if position_to is set
+            # Find starting position if position_to is set
+            start_index = 0
             if position_to:
-                items = [i for i in items if i["sku"].upper().startswith(position_to.upper())]
+                for i, item in enumerate(items):
+                    if item["sku"].upper() >= position_to.upper():
+                        start_index = i
+                        break
 
             wwl = WorkWithList(
                 "WORK WITH INVENTORY",
@@ -275,8 +279,11 @@ class InventoryApp:
                     Location=item["location"][:15]
                 )
 
+            # Set initial scroll position
+            wwl.current_row = start_index
+
             result = wwl.show()
-            # Update position filter from header field
+            # Update position value from header field
             position_to = wwl.get_header_values().get("Position to", "")
 
             if result is None:
