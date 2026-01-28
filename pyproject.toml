@@ -38,3 +38,8 @@ packages = ["src/ux3270", "examples/inventory_app"]
 [tool.hatch.build.targets.wheel.sources]
 "src" = ""
 "examples" = ""
+
+[dependency-groups]
+dev = [
+    "ty>=0.0.14",
+]

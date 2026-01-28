@@ -3,6 +3,7 @@
 
 import argparse
 import random
+from typing import Optional
 
 from ux3270.panel import FieldType
 from ux3270.dialog import Menu, Form, Table, TabularEntry, WorkWithList, SelectionList, show_message
@@ -76,7 +77,7 @@ class InventoryApp:
         menu.run()
         self.db.close()
 
-    def _select_item(self) -> str:
+    def _select_item(self) -> Optional[str]:
         """
         Show item selection list for F4=Prompt.
 

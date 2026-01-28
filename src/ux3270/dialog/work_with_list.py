@@ -37,7 +37,7 @@ class WorkWithList:
     HEADER_LINES = 7     # Title + instruction + blank + actions + blank + header + separator
     FOOTER_LINES = 3     # Message + separator + function keys
 
-    def __init__(self, title: str = "", columns: List[str] = None,
+    def __init__(self, title: str = "", columns: Optional[List[str]] = None,
                  panel_id: str = "", instruction: str = ""):
         """
         Initialize a work-with list.

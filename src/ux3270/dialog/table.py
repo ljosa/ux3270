@@ -3,7 +3,7 @@
 import sys
 import tty
 import termios
-from typing import List
+from typing import List, Optional
 
 from ux3270.panel import Colors
 
@@ -30,7 +30,7 @@ class Table:
     HEADER_LINES = 4     # Title + blank + column header + separator
     FOOTER_LINES = 3     # Message + separator + function keys
 
-    def __init__(self, title: str = "", columns: List[str] = None,
+    def __init__(self, title: str = "", columns: Optional[List[str]] = None,
                  panel_id: str = ""):
         """
         Initialize a table.

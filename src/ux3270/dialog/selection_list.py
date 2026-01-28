@@ -32,7 +32,7 @@ class SelectionList:
     HEADER_LINES = 5     # Title + instruction + blank + headers + separator
     FOOTER_LINES = 3     # Message + separator + function keys
 
-    def __init__(self, title: str = "SELECTION LIST", columns: List[str] = None,
+    def __init__(self, title: str = "SELECTION LIST", columns: Optional[List[str]] = None,
                  panel_id: str = "", instruction: str = "Type S to select item"):
         """
         Initialize a selection list.

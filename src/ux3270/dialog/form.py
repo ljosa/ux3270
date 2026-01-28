@@ -49,7 +49,7 @@ class Form:
         required: bool = False,
         validator: Optional[Callable[[str], bool]] = None,
         help_text: str = "",
-        prompt: Optional[Callable[[], str]] = None
+        prompt: Optional[Callable[[], Optional[str]]] = None
     ) -> "Form":
         """
         Add a field to the form.
@@ -111,11 +111,11 @@ class Form:
         self.screen.short_message = message
         return self
 
-    def show(self) -> Dict[str, Any]:
+    def show(self) -> Optional[Dict[str, Any]]:
         """
         Display the form and return results.
 
         Returns:
-            Dictionary of field values
+            Dictionary of field values, or None if cancelled
         """
         return self.screen.show()

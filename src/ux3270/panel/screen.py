@@ -105,7 +105,7 @@ class Screen:
         except Exception:
             return 80  # IBM 3270 Model 2 standard
 
-    def render(self, in_command_line: bool = False, current_field: "Field" = None):
+    def render(self, in_command_line: bool = False, current_field: Optional["Field"] = None):
         """Render the screen with all fields and text following CUA layout.
 
         CUA Layout (adapted for variable height):
@@ -533,7 +533,7 @@ class Screen:
                 return i
         return -1
 
-    def show(self) -> Dict[str, Any]:
+    def show(self) -> Optional[Dict[str, Any]]:
         """
         Display the screen and handle user interaction.
 
