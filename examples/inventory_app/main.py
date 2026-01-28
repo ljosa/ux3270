@@ -5,7 +5,7 @@ import argparse
 import random
 
 from ux3270.panel import FieldType
-from ux3270.dialog import Menu, Form, Table, SelectionList, show_message
+from ux3270.dialog import Menu, Form, Table, WorkWithList, SelectionList, show_message
 from .database import InventoryDB
 
 
@@ -148,28 +148,142 @@ class InventoryApp:
         except Exception as e:
             show_message(f"ERROR: {e}", "error")
 
-    def view_items(self):
-        """View all items in inventory."""
-        items = self.db.list_items()
-
-        if not items:
-            show_message("NO ITEMS IN INVENTORY", "warning")
+    def _display_item(self, item_id: int):
+        """Display item details (read-only)."""
+        item = self.db.get_item(item_id)
+        if not item:
+            show_message(f"ITEM NOT FOUND: {item_id}", "error")
             return
 
-        table = Table("INVENTORY LIST", ["ID", "SKU", "Name", "Qty", "Price", "Location"],
-                     panel_id="INV010")
+        form = Form("DISPLAY ITEM", panel_id="INV012",
+                   help_text="Item details (read-only). Press F3 to return.")
+        form.add_field("ID", length=10, field_type=FieldType.READONLY,
+                      default=str(item["id"]))
+        form.add_field("SKU", length=20, field_type=FieldType.READONLY,
+                      default=item["sku"])
+        form.add_field("Name", length=40, field_type=FieldType.READONLY,
+                      default=item["name"])
+        form.add_field("Description", length=60, field_type=FieldType.READONLY,
+                      default=item["description"])
+        form.add_field("Quantity", length=10, field_type=FieldType.READONLY,
+                      default=str(item["quantity"]))
+        form.add_field("Unit Price", length=10, field_type=FieldType.READONLY,
+                      default=f"${item['unit_price']:.2f}")
+        form.add_field("Location", length=30, field_type=FieldType.READONLY,
+                      default=item["location"])
+        form.show()
 
-        for item in items:
-            table.add_row(
+    def _edit_item(self, item_id: int):
+        """Edit an item directly by ID."""
+        item = self.db.get_item(item_id)
+        if not item:
+            show_message(f"ITEM NOT FOUND: {item_id}", "error")
+            return
+
+        update_form = Form("UPDATE ITEM", panel_id="INV003",
+                          help_text="Modify item details. Press Enter to save, F3 to cancel.")
+        update_form.add_field("SKU", length=20, default=item["sku"], required=True,
+                             help_text="Stock Keeping Unit - must be unique")
+        update_form.add_field("Name", length=40, default=item["name"], required=True,
+                             help_text="Descriptive name for the item")
+        update_form.add_field("Description", length=60, default=item["description"],
+                             help_text="Optional detailed description")
+        update_form.add_field("Quantity", length=10, field_type=FieldType.NUMERIC,
+                            default=str(item["quantity"]),
+                            help_text="Current stock quantity")
+        update_form.add_field("Unit Price", length=10, default=str(item["unit_price"]),
+                             help_text="Price per unit")
+        update_form.add_field("Location", length=30, default=item["location"],
+                             help_text="Storage location")
+
+        result = update_form.show()
+        if result is None:
+            return
+
+        try:
+            self.db.update_item(
                 item["id"],
-                item["sku"],
-                item["name"][:30],  # Truncate long names
-                item["quantity"],
-                f"${item['unit_price']:.2f}",
-                item["location"][:20]  # Truncate long locations
+                sku=result["SKU"],
+                name=result["Name"],
+                description=result.get("Description", ""),
+                quantity=int(result.get("Quantity", "0") or "0"),
+                unit_price=float(result.get("Unit Price", "0.0") or "0.0"),
+                location=result.get("Location", "")
             )
+            show_message("ITEM UPDATED", "success")
+        except Exception as e:
+            show_message(f"ERROR: {e}", "error")
 
-        table.show()
+    def _delete_item(self, item_id: int):
+        """Delete an item directly by ID."""
+        item = self.db.get_item(item_id)
+        if not item:
+            show_message(f"ITEM NOT FOUND: {item_id}", "error")
+            return
+
+        confirm_form = Form("CONFIRM DELETE", panel_id="INV004",
+                           help_text="Confirm deletion. This action cannot be undone.")
+        confirm_form.add_text(f"Item: {item['sku']} - {item['name']}")
+        confirm_form.add_field("Delete? (Y/N)", length=1, required=True,
+                              help_text="Enter Y to confirm deletion, N to cancel")
+
+        confirm = confirm_form.show()
+        if confirm is None:
+            return
+
+        if confirm["Delete? (Y/N)"].upper() == "Y":
+            if self.db.delete_item(item["id"]):
+                show_message("ITEM DELETED", "success")
+            else:
+                show_message("DELETE FAILED", "error")
+
+    def view_items(self):
+        """View all items in inventory with work-with actions."""
+        while True:
+            items = self.db.list_items()
+
+            if not items:
+                show_message("NO ITEMS IN INVENTORY", "warning")
+                return
+
+            wwl = WorkWithList(
+                "WORK WITH INVENTORY",
+                columns=["SKU", "Name", "Qty", "Price", "Location"],
+                panel_id="INV010",
+                instruction="Type action code, press Enter to process."
+            )
+            wwl.add_action("2", "Change")
+            wwl.add_action("4", "Delete")
+            wwl.add_action("5", "Display")
+            wwl.set_add_callback(self.add_item)
+
+            for item in items:
+                wwl.add_row(
+                    id=item["id"],
+                    SKU=item["sku"],
+                    Name=item["name"][:25],
+                    Qty=str(item["quantity"]),
+                    Price=f"${item['unit_price']:.2f}",
+                    Location=item["location"][:15]
+                )
+
+            result = wwl.show()
+
+            if result is None:
+                return  # User pressed F3
+
+            # Process actions
+            for action_item in result:
+                action = action_item["action"]
+                row = action_item["row"]
+                item_id = row["id"]
+
+                if action == "2":
+                    self._edit_item(item_id)
+                elif action == "4":
+                    self._delete_item(item_id)
+                elif action == "5":
+                    self._display_item(item_id)
 
     def search_items(self):
         """Search for items."""

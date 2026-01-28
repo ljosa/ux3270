@@ -160,8 +160,8 @@ class Screen:
             # Display field value
             self.move_cursor(field.row, field.col)
             if field.field_type == FieldType.READONLY:
-                # Readonly fields: dimmed/protected
-                print(f"{Colors.DIM}{field.value}{Colors.RESET}", end="", flush=True)
+                # Readonly fields: green (data color, same as tables)
+                print(f"{Colors.DEFAULT}{field.value}{Colors.RESET}", end="", flush=True)
             elif field.field_type == FieldType.PASSWORD:
                 # Password fields: show asterisks in input color
                 print(f"{Colors.INPUT}{'*' * len(field.value)}{Colors.RESET}", end="", flush=True)
@@ -550,9 +550,23 @@ class Screen:
         in_command_line = False
 
         if current_field_idx < 0:
-            # All fields are readonly, just display and wait for enter
+            # All fields are readonly, just display and wait for F3 or Enter
             self.render()
-            input(f"\n{Colors.dim('Press Enter to continue...')}")
+            fd = sys.stdin.fileno()
+            old_settings = termios.tcgetattr(fd)
+            try:
+                tty.setraw(fd)
+                while True:
+                    ch = sys.stdin.read(1)
+                    if ch in ('\r', '\n', '\x03'):  # Enter or Ctrl+C
+                        break
+                    if ch == '\x1b':  # Escape sequence (F3)
+                        seq = sys.stdin.read(2)
+                        if seq in ('[R', 'OR') or seq.startswith('[1'):
+                            break
+            finally:
+                termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+            self.clear()
             return self._get_results()
 
         try:

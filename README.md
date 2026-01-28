@@ -25,7 +25,7 @@ uv venv && uv pip install -e .
 ## Quick Start
 
 ```python
-from ux3270.dialog import Menu, Form, Table, SelectionList, show_message
+from ux3270.dialog import Menu, Form, Table, WorkWithList, SelectionList, show_message
 
 # Create a form with help text
 form = Form("DATA ENTRY", help_text="Enter your information")
@@ -47,6 +47,19 @@ def select_dept():
 form = Form("ASSIGNMENT")
 form.add_field("Department", prompt=select_dept)  # F4 shows list
 result = form.show()
+
+# Work-with list (action codes per row)
+wwl = WorkWithList("WORK WITH ITEMS", ["ID", "Name", "Status"])
+wwl.add_action("2", "Change")
+wwl.add_action("4", "Delete")
+wwl.add_action("5", "Display")
+wwl.set_add_callback(add_new_item)  # F6=Add
+wwl.add_row(ID="001", Name="Item 1", Status="Active")
+wwl.add_row(ID="002", Name="Item 2", Status="Inactive")
+result = wwl.show()  # Returns [{"action": "2", "row": {...}}, ...]
+for item in result or []:
+    if item["action"] == "2":
+        edit_item(item["row"]["ID"])
 
 # Create a menu
 menu = Menu("MAIN MENU")
@@ -100,6 +113,9 @@ inventory-app --help
 | Tables/Lists | F8 | Page forward |
 | Tables | Enter | Return |
 | Selection Lists | S | Select item |
+| Work-with Lists | 1-9, A-Z | Enter action code |
+| Work-with Lists | Enter | Process actions |
+| Work-with Lists | F6 | Add new record |
 
 ## IBM 3270 Colors
 
