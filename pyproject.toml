@@ -41,5 +41,6 @@ packages = ["src/ux3270", "examples/inventory_app"]
 
 [dependency-groups]
 dev = [
+    "pre-commit>=4.5.1",
     "ty>=0.0.14",
 ]
