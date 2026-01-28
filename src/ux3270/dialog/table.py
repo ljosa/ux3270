@@ -3,9 +3,27 @@
 import sys
 import tty
 import termios
-from typing import List, Optional
+from typing import List, Optional, Literal
 
 from ux3270.panel import Colors
+
+
+class TableColumn:
+    """Represents a column definition in a table."""
+
+    def __init__(self, name: str, width: Optional[int] = None,
+                 align: Literal["left", "right"] = "left"):
+        """
+        Initialize a column.
+
+        Args:
+            name: Column name (used as header)
+            width: Display width (None = auto-calculate from content)
+            align: Text alignment ("left" or "right")
+        """
+        self.name = name
+        self.width = width
+        self.align = align
 
 
 class Table:
@@ -37,15 +55,35 @@ class Table:
 
         Args:
             title: Table title (displayed in uppercase per IBM convention)
-            columns: List of column headers
+            columns: List of column headers. For more control, use add_column() instead.
             panel_id: Optional panel identifier (shown at top-left per CUA)
         """
         self.title = title.upper() if title else ""
         self.panel_id = panel_id.upper() if panel_id else ""
-        self.columns = columns or []
+        # Convert simple column names to TableColumn objects
+        self._columns: List[TableColumn] = []
+        if columns:
+            for col in columns:
+                self._columns.append(TableColumn(col))
         self.rows: List[List[str]] = []
         self.col_widths: List[int] = []
         self.current_row = 0  # First visible row index
+
+    def add_column(self, name: str, width: Optional[int] = None,
+                   align: Literal["left", "right"] = "left") -> "Table":
+        """
+        Add a column definition.
+
+        Args:
+            name: Column name (used as header)
+            width: Display width (None = auto-calculate from content)
+            align: Text alignment ("left" or "right")
+
+        Returns:
+            Self for method chaining
+        """
+        self._columns.append(TableColumn(name, width, align))
+        return self
 
     def add_row(self, *values) -> "Table":
         """
@@ -62,14 +100,19 @@ class Table:
 
     def _calculate_widths(self):
         """Calculate column widths based on content."""
-        if not self.columns:
+        if not self._columns:
             return
 
-        self.col_widths = [len(col) for col in self.columns]
+        self.col_widths = []
+        for col in self._columns:
+            if col.width is not None:
+                self.col_widths.append(col.width)
+            else:
+                self.col_widths.append(len(col.name))
 
         for row in self.rows:
             for i, val in enumerate(row):
-                if i < len(self.col_widths):
+                if i < len(self.col_widths) and self._columns[i].width is None:
                     self.col_widths[i] = max(self.col_widths[i], len(str(val)))
 
     def _get_terminal_size(self) -> tuple:
@@ -118,12 +161,15 @@ class Table:
             print(f"{Colors.title(self.title)}", end="", flush=True)
 
         # Row 2: Column headers (intensified per CUA convention)
-        if self.columns:
+        if self._columns:
             self._move_cursor(self.HEADER_ROW, 0)
             header_parts = []
-            for i, col in enumerate(self.columns):
-                w = self.col_widths[i] if i < len(self.col_widths) else len(col)
-                header_parts.append(Colors.header(col.ljust(w)))
+            for i, col in enumerate(self._columns):
+                w = self.col_widths[i] if i < len(self.col_widths) else len(col.name)
+                if col.align == "right":
+                    header_parts.append(Colors.header(col.name.rjust(w)))
+                else:
+                    header_parts.append(Colors.header(col.name.ljust(w)))
             print("  " + f" {Colors.PROTECTED}│{Colors.RESET} ".join(header_parts), end="", flush=True)
 
             # Row 3: Separator line
@@ -142,7 +188,11 @@ class Table:
             row_parts = []
             for j, val in enumerate(row):
                 w = self.col_widths[j] if j < len(self.col_widths) else len(str(val))
-                row_parts.append(f"{Colors.DEFAULT}{str(val).ljust(w)}{Colors.RESET}")
+                col = self._columns[j] if j < len(self._columns) else None
+                if col and col.align == "right":
+                    row_parts.append(f"{Colors.DEFAULT}{str(val).rjust(w)}{Colors.RESET}")
+                else:
+                    row_parts.append(f"{Colors.DEFAULT}{str(val).ljust(w)}{Colors.RESET}")
             print(f"  " + f" {Colors.PROTECTED}│{Colors.RESET} ".join(row_parts), end="", flush=True)
 
         # Message line (height-3): Row count and pagination info

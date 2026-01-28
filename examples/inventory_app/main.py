@@ -259,10 +259,14 @@ class InventoryApp:
 
             wwl = WorkWithList(
                 "WORK WITH INVENTORY",
-                columns=["SKU", "Name", "Qty", "Price", "Location"],
                 panel_id="INV010",
                 instruction="Type action code, press Enter to process."
             )
+            wwl.add_column("SKU")
+            wwl.add_column("Name")
+            wwl.add_column("Qty", align="right")
+            wwl.add_column("Price", align="right")
+            wwl.add_column("Location")
             wwl.add_header_field("Position to", length=15, default=position_to)
             wwl.add_action("2", "Change")
             wwl.add_action("4", "Delete")
@@ -322,8 +326,13 @@ class InventoryApp:
             return
 
         table = Table(f"SEARCH RESULTS: {search_term.upper()}",
-                     ["ID", "SKU", "Name", "Qty", "Price", "Location"],
                      panel_id="INV011")
+        table.add_column("ID")
+        table.add_column("SKU")
+        table.add_column("Name")
+        table.add_column("Qty", align="right")
+        table.add_column("Price", align="right")
+        table.add_column("Location")
 
         for item in items:
             table.add_row(

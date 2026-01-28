@@ -3,7 +3,7 @@
 import sys
 import tty
 import termios
-from typing import List, Dict, Any, Optional, Callable
+from typing import List, Dict, Any, Optional, Callable, Literal
 
 from ux3270.panel import Colors, FieldType
 
@@ -18,6 +18,24 @@ class HeaderField:
         self.default = default
         self.field_type = field_type
         self.value = default
+
+
+class ListColumn:
+    """Represents a column definition in a work-with list."""
+
+    def __init__(self, name: str, width: Optional[int] = None,
+                 align: Literal["left", "right"] = "left"):
+        """
+        Initialize a column.
+
+        Args:
+            name: Column name (used as header and key in row data)
+            width: Display width (None = auto-calculate from content)
+            align: Text alignment ("left" or "right")
+        """
+        self.name = name
+        self.width = width
+        self.align = align
 
 
 class WorkWithList:
@@ -56,20 +74,41 @@ class WorkWithList:
 
         Args:
             title: List title (displayed in uppercase per IBM convention)
-            columns: List of column headers (excluding the Action column)
+            columns: List of column headers (excluding the Action column).
+                    For more control, use add_column() instead.
             panel_id: Optional panel identifier (shown at top-left per CUA)
             instruction: Instruction text (default provided if empty)
         """
         self.title = title.upper() if title else ""
         self.panel_id = panel_id.upper() if panel_id else ""
         self.instruction = instruction or "Type action code, press Enter to process."
-        self.columns = columns or []
+        # Convert simple column names to ListColumn objects
+        self._columns: List[ListColumn] = []
+        if columns:
+            for col in columns:
+                self._columns.append(ListColumn(col))
         self.rows: List[Dict[str, Any]] = []
         self.actions: Dict[str, str] = {}  # code -> description
         self.add_callback: Optional[Callable] = None
         self.current_row = 0  # First visible row index
         self.action_inputs: List[str] = []  # Action code entered per row
         self.header_fields: List[HeaderField] = []
+
+    def add_column(self, name: str, width: Optional[int] = None,
+                   align: Literal["left", "right"] = "left") -> "WorkWithList":
+        """
+        Add a column definition.
+
+        Args:
+            name: Column name (used as header and key in row data)
+            width: Display width (None = auto-calculate from content)
+            align: Text alignment ("left" or "right")
+
+        Returns:
+            Self for method chaining
+        """
+        self._columns.append(ListColumn(name, width, align))
+        return self
 
     def _get_layout(self) -> Dict[str, int]:
         """Calculate layout row positions based on header fields."""
@@ -149,15 +188,20 @@ class WorkWithList:
 
     def _calculate_widths(self) -> List[int]:
         """Calculate column widths based on content."""
-        if not self.columns:
+        if not self._columns:
             return []
 
-        widths = [len(col) for col in self.columns]
+        widths = []
+        for col in self._columns:
+            if col.width is not None:
+                widths.append(col.width)
+            else:
+                widths.append(len(col.name))
 
         for row in self.rows:
-            for i, col in enumerate(self.columns):
-                if col in row:
-                    widths[i] = max(widths[i], len(str(row[col])))
+            for i, col in enumerate(self._columns):
+                if col.name in row and col.width is None:
+                    widths[i] = max(widths[i], len(str(row[col.name])))
 
         return widths
 
@@ -233,9 +277,12 @@ class WorkWithList:
             # Column headers
             self._move_cursor(layout["column_headers"], 0)
             header_parts = [Colors.header("Act")]
-            for i, col in enumerate(self.columns):
-                w = col_widths[i] if i < len(col_widths) else len(col)
-                header_parts.append(Colors.header(col.ljust(w)))
+            for i, col in enumerate(self._columns):
+                w = col_widths[i] if i < len(col_widths) else len(col.name)
+                if col.align == "right":
+                    header_parts.append(Colors.header(col.name.rjust(w)))
+                else:
+                    header_parts.append(Colors.header(col.name.ljust(w)))
             print("  " + "  ".join(header_parts), end="", flush=True)
 
             # Separator
@@ -259,9 +306,13 @@ class WorkWithList:
                 print(f"  {Colors.DEFAULT}{action_display}{Colors.RESET}", end="", flush=True)
 
                 # Data columns
-                for j, col in enumerate(self.columns):
+                for j, col in enumerate(self._columns):
                     w = col_widths[j] if j < len(col_widths) else 10
-                    val = str(row.get(col, "")).ljust(w)
+                    val_str = str(row.get(col.name, ""))
+                    if col.align == "right":
+                        val = val_str.rjust(w)
+                    else:
+                        val = val_str.ljust(w)
                     print(f"  {Colors.DEFAULT}{val}{Colors.RESET}", end="", flush=True)
 
             # Message line (height-3): Row count
