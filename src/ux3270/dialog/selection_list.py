@@ -1,11 +1,8 @@
 """Selection list component for IBM 3270-style applications."""
 
-import sys
-import tty
-import termios
 from typing import List, Optional, Dict, Any, Callable, Literal
 
-from ux3270.panel import Colors
+from ux3270.panel import Screen, Field, FieldType, Colors
 
 
 class SelectionColumn:
@@ -31,15 +28,13 @@ class SelectionList:
     - Action input field per row for selection (type S=Select)
     - F3=Cancel, F6=Add (optional), F7=Backward, F8=Forward
     - Enter with 'S' action code selects the item
+
+    The dialog builds a Screen definition and hands control to Screen
+    for all rendering and input handling.
     """
 
-    TITLE_ROW = 0
-    INSTRUCTION_ROW = 1
-    HEADER_ROW = 3
-    DATA_START_ROW = 5
-
-    HEADER_LINES = 5     # Title + instruction + blank + headers + separator
-    FOOTER_LINES = 3     # Message + separator + function keys
+    # Opt field width (2 chars, standard for AS/400)
+    OPT_FIELD_LENGTH = 2
 
     def __init__(self, title: str = "SELECTION LIST", panel_id: str = "",
                  instruction: str = "Type S to select item, press Enter"):
@@ -56,10 +51,8 @@ class SelectionList:
         self.instruction = instruction
         self._columns: List[SelectionColumn] = []
         self.rows: List[Dict[str, Any]] = []
-        self.col_widths: List[int] = []
-        self.current_row = 0  # First visible row
-        self.action_inputs: List[str] = []  # Action code per row
         self.add_callback: Optional[Callable] = None
+        self.current_page = 0
 
     def add_column(self, name: str, width: Optional[int] = None,
                    align: Literal["left", "right"] = "left") -> "SelectionList":
@@ -106,7 +99,6 @@ class SelectionList:
             Self for method chaining
         """
         self.rows.append(values)
-        self.action_inputs.append("")
         return self
 
     def add_rows(self, rows: List[Dict[str, Any]]) -> "SelectionList":
@@ -121,27 +113,28 @@ class SelectionList:
         """
         for row in rows:
             self.rows.append(row)
-            self.action_inputs.append("")
         return self
 
-    def _calculate_widths(self):
+    def _calculate_widths(self) -> List[int]:
         """Calculate column widths based on content."""
         if not self._columns:
-            return
+            return []
 
-        self.col_widths = []
+        widths = []
         for col in self._columns:
             if col.width is not None:
-                self.col_widths.append(col.width)
+                widths.append(col.width)
             else:
-                self.col_widths.append(len(col.name))
+                widths.append(len(col.name))
 
         for row in self.rows:
             for i, col in enumerate(self._columns):
                 if col.name in row and col.width is None:
                     val_len = len(str(row[col.name]))
-                    if i < len(self.col_widths):
-                        self.col_widths[i] = max(self.col_widths[i], val_len)
+                    if i < len(widths):
+                        widths[i] = max(widths[i], val_len)
+
+        return widths
 
     def _get_terminal_size(self) -> tuple:
         """Get terminal dimensions."""
@@ -152,170 +145,91 @@ class SelectionList:
         except Exception:
             return 24, 80
 
-    def _get_page_size(self, height: int) -> int:
-        """Calculate number of data rows that fit on screen."""
-        return max(1, height - self.HEADER_LINES - self.FOOTER_LINES)
+    def _build_screen(self, page: int, page_size: int, height: int, width: int) -> Screen:
+        """Build a Screen with all text and fields for the current page."""
+        screen = Screen()
+        col_widths = self._calculate_widths()
 
-    def _clear(self):
-        """Clear the terminal screen."""
-        print("\033[2J\033[H", end="", flush=True)
+        # Layout constants
+        title_row = 0
+        instruction_row = 1
+        column_headers_row = 3
+        data_start_row = 5
 
-    def _move_cursor(self, row: int, col: int):
-        """Move cursor to specified position (0-indexed)."""
-        print(f"\033[{row + 1};{col + 1}H", end="", flush=True)
+        # Title
+        if self.panel_id:
+            screen.add_text(title_row, 0, self.panel_id, Colors.PROTECTED)
+        if self.title:
+            title_col = max(0, (width - len(self.title)) // 2)
+            screen.add_text(title_row, title_col, self.title, Colors.INTENSIFIED)
 
-    def _render(self, page_size: int, height: int, width: int,
-                cursor_row: int, full_redraw: bool = True):
-        """Render the selection list.
+        # Instruction
+        screen.add_text(instruction_row, 0, self.instruction, Colors.PROTECTED)
 
-        Args:
-            page_size: Number of data rows per page
-            height: Terminal height
-            width: Terminal width
-            cursor_row: Current cursor row (relative to visible rows)
-            full_redraw: If True, clear and redraw everything
-        """
-        self._calculate_widths()
+        # Column headers
+        header_text = "Opt"
+        for i, col in enumerate(self._columns):
+            w = col_widths[i] if i < len(col_widths) else len(col.name)
+            if col.align == "right":
+                header_text += "  " + col.name.rjust(w)
+            else:
+                header_text += "  " + col.name.ljust(w)
+        screen.add_text(column_headers_row, 2, header_text, Colors.INTENSIFIED)
 
-        if full_redraw:
-            self._clear()
+        # Separator
+        sep = "───"  # Opt column
+        for w in col_widths:
+            sep += "──" + "─" * w
+        screen.add_text(column_headers_row + 1, 2, sep, Colors.PROTECTED)
 
-            # Row 0: Panel ID and Title
-            self._move_cursor(self.TITLE_ROW, 0)
-            if self.panel_id:
-                print(f"{Colors.PROTECTED}{self.panel_id}{Colors.RESET}", end="", flush=True)
-            if self.title:
-                title_col = max(0, (width - len(self.title)) // 2)
-                self._move_cursor(self.TITLE_ROW, title_col)
-                print(f"{Colors.title(self.title)}", end="", flush=True)
+        # Data rows with Opt fields
+        start_row_idx = page * page_size
+        end_row_idx = min(start_row_idx + page_size, len(self.rows))
+        visible_rows = self.rows[start_row_idx:end_row_idx]
 
-            # Row 1: Instruction
-            if self.instruction:
-                self._move_cursor(self.INSTRUCTION_ROW, 0)
-                print(f"{Colors.PROTECTED}{self.instruction}{Colors.RESET}", end="", flush=True)
+        for i, data_row in enumerate(visible_rows):
+            screen_row = data_start_row + i
 
-            # Row 3: Column headers with Opt column
-            if self._columns:
-                self._move_cursor(self.HEADER_ROW, 0)
-                # Opt column header (2 chars)
-                header_parts = [Colors.header("Opt")]
-                for i, col in enumerate(self._columns):
-                    w = self.col_widths[i] if i < len(self.col_widths) else len(col.name)
-                    if col.align == "right":
-                        header_parts.append(Colors.header(col.name.rjust(w)))
-                    else:
-                        header_parts.append(Colors.header(col.name.ljust(w)))
-                print("  " + "  ".join(header_parts), end="", flush=True)
+            # Opt input field
+            opt_field = Field(row=screen_row, col=2, length=self.OPT_FIELD_LENGTH,
+                             label=f"opt_{start_row_idx + i}")
+            screen.add_field(opt_field)
 
-                # Row 4: Separator
-                self._move_cursor(self.HEADER_ROW + 1, 0)
-                sep_parts = ["───"]  # Opt column (3 chars to match header)
-                for w in self.col_widths:
-                    sep_parts.append("─" * w)
-                print(f"  {Colors.PROTECTED}{'──'.join(sep_parts)}{Colors.RESET}", end="", flush=True)
-
-            # Data rows
-            end_row = min(self.current_row + page_size, len(self.rows))
-            visible_rows = self.rows[self.current_row:end_row]
-
-            for i, row in enumerate(visible_rows):
-                abs_idx = self.current_row + i
-                self._move_cursor(self.DATA_START_ROW + i, 0)
-
-                # Opt input field (2 chars visible, padded to 3 for alignment)
-                action_val = self.action_inputs[abs_idx] if abs_idx < len(self.action_inputs) else ""
-                if action_val:
-                    action_display = action_val.ljust(3)
+            # Data columns (as text)
+            col_pos = 2 + 3 + 2  # After Opt field + spacing
+            for j, col in enumerate(self._columns):
+                w = col_widths[j] if j < len(col_widths) else 10
+                val = str(data_row.get(col.name, ""))
+                if col.align == "right":
+                    display_val = val.rjust(w)
                 else:
-                    action_display = "__ "  # 2 underscores + space
-                print(f"  {Colors.DEFAULT}{action_display}{Colors.RESET}", end="", flush=True)
+                    display_val = val.ljust(w)
+                screen.add_text(screen_row, col_pos, display_val, Colors.DEFAULT)
+                col_pos += w + 2
 
-                # Data columns
-                for j, col in enumerate(self._columns):
-                    w = self.col_widths[j] if j < len(self.col_widths) else 10
-                    val = str(row.get(col.name, ""))
-                    if col.align == "right":
-                        formatted = val.rjust(w)
-                    else:
-                        formatted = val.ljust(w)
-                    print(f"  {Colors.DEFAULT}{formatted}{Colors.RESET}", end="", flush=True)
-
-            # Message line (height-3): Row count
-            self._move_cursor(height - 3, 0)
-            if self.rows:
-                if len(self.rows) > page_size:
-                    start_display = self.current_row + 1
-                    end_display = min(self.current_row + page_size, len(self.rows))
-                    count_msg = f"ROW {start_display} TO {end_display} OF {len(self.rows)}"
-                else:
-                    count_msg = f"ROWS {len(self.rows)}"
-                self._move_cursor(height - 3, width - len(count_msg) - 1)
-                print(Colors.info(count_msg), end="", flush=True)
-
-            # Separator (height-2)
-            self._move_cursor(height - 2, 0)
-            print(Colors.dim("─" * width), end="", flush=True)
-
-            # Function keys (height-1)
-            self._move_cursor(height - 1, 0)
-            hints = [Colors.info("F3=Cancel")]
-            if self.add_callback:
-                hints.append(Colors.info("F6=Add"))
+        # Row count message
+        if self.rows:
             if len(self.rows) > page_size:
-                if self.current_row > 0:
-                    hints.append(Colors.info("F7=Up"))
-                if self.current_row + page_size < len(self.rows):
-                    hints.append(Colors.info("F8=Down"))
-            print("  ".join(hints), end="", flush=True)
-        else:
-            # Partial update: refresh Opt input fields
-            end_row = min(self.current_row + page_size, len(self.rows))
-            for i in range(end_row - self.current_row):
-                abs_idx = self.current_row + i
-                self._move_cursor(self.DATA_START_ROW + i, 2)
-                action_val = self.action_inputs[abs_idx] if abs_idx < len(self.action_inputs) else ""
-                if action_val:
-                    action_display = action_val.ljust(3)
-                else:
-                    action_display = "__ "
-                print(f"{Colors.DEFAULT}{action_display}{Colors.RESET}", end="", flush=True)
+                count_msg = f"ROW {start_row_idx + 1} TO {end_row_idx} OF {len(self.rows)}"
+            else:
+                count_msg = f"ROWS {len(self.rows)}"
+            screen.add_text(height - 3, width - len(count_msg) - 1, count_msg, Colors.PROTECTED)
 
-        # Position cursor at current action input field
-        if 0 <= cursor_row < page_size and cursor_row + self.current_row < len(self.rows):
-            self._move_cursor(self.DATA_START_ROW + cursor_row, 2)
+        # Separator
+        screen.add_text(height - 2, 0, "─" * width, Colors.DIM)
 
-    def _read_key(self) -> str:
-        """Read a key, handling escape sequences."""
-        ch = sys.stdin.read(1)
+        # Function keys
+        fkeys = ["F3=Cancel"]
+        if self.add_callback:
+            fkeys.append("F6=Add")
+        if len(self.rows) > page_size:
+            if page > 0:
+                fkeys.append("F7=Up")
+            if end_row_idx < len(self.rows):
+                fkeys.append("F8=Down")
+        screen.add_text(height - 1, 0, "  ".join(fkeys), Colors.PROTECTED)
 
-        if ch == '\x1b':
-            seq1 = sys.stdin.read(1)
-            if seq1 == '[':
-                seq2 = sys.stdin.read(1)
-                if seq2 == 'A':
-                    return 'UP'
-                elif seq2 == 'B':
-                    return 'DOWN'
-                elif seq2 == '1':
-                    seq3 = sys.stdin.read(1)
-                    sys.stdin.read(1)  # ~
-                    if seq3 == '3':
-                        return 'F3'
-                    elif seq3 == '7':
-                        return 'F6'
-                    elif seq3 == '8':
-                        return 'F7'
-                    elif seq3 == '9':
-                        return 'F8'
-            elif seq1 == 'O':
-                seq2 = sys.stdin.read(1)
-                if seq2 == 'R':
-                    return 'F3'
-                elif seq2 == 'Q':
-                    return 'F6'
-            return 'ESC'
-
-        return ch
+        return screen
 
     def show(self) -> Optional[Dict[str, Any]]:
         """
@@ -328,98 +242,45 @@ class SelectionList:
             return None
 
         height, width = self._get_terminal_size()
-        page_size = self._get_page_size(height)
+        # Calculate page size based on available space
+        chrome_lines = 5 + 3  # header rows + footer
+        page_size = max(1, height - chrome_lines)
 
-        cursor_row = 0  # Cursor position relative to visible rows
-        need_full_redraw = True
+        page = 0
 
-        fd = sys.stdin.fileno()
-        old_settings = termios.tcgetattr(fd)
+        while True:
+            screen = self._build_screen(page, page_size, height, width)
+            result = screen.show()
 
-        try:
-            while True:
-                self._render(page_size, height, width, cursor_row,
-                            full_redraw=need_full_redraw)
-                need_full_redraw = False
+            if result is None:
+                return None
 
-                tty.setraw(fd)
-                key = self._read_key()
-                termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+            aid = result["aid"]
+            fields = result["fields"]
 
-                if key == 'F3' or key == '\x03':
-                    self._clear()
-                    return None
+            if aid == "F3":
+                return None
 
-                elif key == 'F6' and self.add_callback:
-                    self._clear()
-                    result = self.add_callback()
-                    if result:
-                        return result
-                    return None
+            elif aid == "F6" and self.add_callback:
+                new_item = self.add_callback()
+                if new_item:
+                    return new_item
+                return None
 
-                elif key == 'F7':
-                    if self.current_row > 0:
-                        self.current_row = max(0, self.current_row - page_size)
-                        cursor_row = 0
-                        need_full_redraw = True
+            elif aid == "F7" or aid == "PGUP":
+                if page > 0:
+                    page -= 1
 
-                elif key == 'F8':
-                    if self.current_row + page_size < len(self.rows):
-                        self.current_row = min(len(self.rows) - 1, self.current_row + page_size)
-                        cursor_row = 0
-                        need_full_redraw = True
+            elif aid == "F8" or aid == "PGDN":
+                start_idx = page * page_size
+                if start_idx + page_size < len(self.rows):
+                    page += 1
 
-                elif key == '\t':
-                    # Tab to next row
-                    abs_row = self.current_row + cursor_row
-                    if abs_row < len(self.rows) - 1:
-                        if cursor_row < page_size - 1:
-                            cursor_row += 1
-                        elif self.current_row + page_size < len(self.rows):
-                            self.current_row += 1
-                            need_full_redraw = True
-
-                elif key == 'UP':
-                    if cursor_row > 0:
-                        cursor_row -= 1
-                    elif self.current_row > 0:
-                        self.current_row -= 1
-                        need_full_redraw = True
-
-                elif key == 'DOWN':
-                    abs_row = self.current_row + cursor_row
-                    if cursor_row < page_size - 1 and abs_row < len(self.rows) - 1:
-                        cursor_row += 1
-                    elif self.current_row + page_size < len(self.rows):
-                        self.current_row += 1
-                        need_full_redraw = True
-
-                elif key in ('\r', '\n'):
-                    # Enter - find row with 'S' action
-                    for i, action in enumerate(self.action_inputs):
-                        if action.upper() == 'S':
-                            self._clear()
-                            return self.rows[i]
-                    # No selection made, continue
-
-                elif key == '\x7f' or key == '\x08':  # Backspace
-                    abs_row = self.current_row + cursor_row
-                    if abs_row < len(self.action_inputs):
-                        self.action_inputs[abs_row] = ""
-
-                elif len(key) == 1 and key.upper() == 'S':
-                    # Type S - clear others (single select) and set this one
-                    abs_row = self.current_row + cursor_row
-                    for i in range(len(self.action_inputs)):
-                        self.action_inputs[i] = ""
-                    if abs_row < len(self.action_inputs):
-                        self.action_inputs[abs_row] = "S"
-                        # Auto-advance
-                        if cursor_row < page_size - 1 and abs_row < len(self.rows) - 1:
-                            cursor_row += 1
-                        elif self.current_row + page_size < len(self.rows):
-                            self.current_row += 1
-                            need_full_redraw = True
-
-        finally:
-            termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+            elif aid == "ENTER":
+                # Check for 'S' selection in Opt fields
+                for key, value in fields.items():
+                    if key.startswith("opt_") and value.upper() == "S":
+                        row_idx = int(key.split("_")[1])
+                        if row_idx < len(self.rows):
+                            return self.rows[row_idx]
+                # No selection made, continue

@@ -1,11 +1,8 @@
 """Menu UI component for IBM 3270-style applications."""
 
-import sys
-import tty
-import termios
 from typing import List, Callable, Optional
 
-from ux3270.panel import Colors
+from ux3270.panel import Screen, Colors
 
 
 class MenuItem:
@@ -35,6 +32,9 @@ class Menu:
     - Instruction line below title
     - Menu items in body area
     - Function keys at bottom
+
+    The dialog builds a Screen definition and hands control to Screen
+    for all rendering and input handling.
     """
 
     # CUA layout constants
@@ -72,10 +72,6 @@ class Menu:
         self.items.append(MenuItem(key, label, action))
         return self
 
-    def clear(self):
-        """Clear the terminal screen."""
-        print("\033[2J\033[H", end="", flush=True)
-
     def _get_terminal_size(self) -> tuple:
         """Get terminal dimensions."""
         try:
@@ -83,81 +79,38 @@ class Menu:
             size = os.get_terminal_size()
             return size.lines, size.columns
         except Exception:
-            return 24, 80  # IBM 3270 Model 2 standard
+            return 24, 80
 
-    def _move_cursor(self, row: int, col: int):
-        """Move cursor to specified position (0-indexed)."""
-        print(f"\033[{row + 1};{col + 1}H", end="", flush=True)
+    def _build_screen(self, height: int, width: int) -> Screen:
+        """Build a Screen with the menu display."""
+        screen = Screen()
+        screen.set_any_key_mode(True)  # Return on single key press
 
-    def render(self):
-        """Render the menu following CUA layout.
-
-        CUA Layout (adapted for variable height):
-        - Row 0: Panel ID (left) + Title (centered)
-        - Row 1: Instruction line
-        - Rows 3+: Menu items
-        - Row height-2: Separator
-        - Row height-1: Function keys
-        """
-        self.clear()
-        height, width = self._get_terminal_size()
-
-        # Row 0: Panel ID (left) and Title (centered)
-        self._move_cursor(self.TITLE_ROW, 0)
+        # Row 0: Panel ID and Title
         if self.panel_id:
-            print(f"{Colors.PROTECTED}{self.panel_id}{Colors.RESET}", end="", flush=True)
+            screen.add_text(self.TITLE_ROW, 0, self.panel_id, Colors.PROTECTED)
         if self.title:
             title_col = max(0, (width - len(self.title)) // 2)
-            self._move_cursor(self.TITLE_ROW, title_col)
-            print(f"{Colors.title(self.title)}", end="", flush=True)
+            screen.add_text(self.TITLE_ROW, title_col, self.title, Colors.INTENSIFIED)
 
         # Row 1: Instruction line
         if self.instruction:
-            self._move_cursor(self.INSTRUCTION_ROW, 0)
-            print(f"{Colors.PROTECTED}{self.instruction}{Colors.RESET}", end="", flush=True)
+            screen.add_text(self.INSTRUCTION_ROW, 0, self.instruction, Colors.PROTECTED)
 
         # Menu items starting at row 3
         for i, item in enumerate(self.items):
-            self._move_cursor(self.ITEMS_START_ROW + i, 2)
-            key_display = Colors.intensified(item.key)
-            print(f"{key_display} {Colors.PROTECTED}-{Colors.RESET} {item.label}", end="", flush=True)
+            # Format: "1 - Label"
+            item_text = f"{item.key} - {item.label}"
+            screen.add_text(self.ITEMS_START_ROW + i, 2, item.key, Colors.INTENSIFIED)
+            screen.add_text(self.ITEMS_START_ROW + i, 4, f"- {item.label}", Colors.PROTECTED)
 
-        # Separator (height-2) - full width per CUA
-        self._move_cursor(height - 2, 0)
-        print(Colors.dim("─" * width), end="", flush=True)
+        # Separator (height-2)
+        screen.add_text(height - 2, 0, "─" * width, Colors.DIM)
 
         # Function keys (height-1)
-        self._move_cursor(height - 1, 0)
-        print(f"{Colors.info('F3=Exit')}", end="", flush=True)
+        screen.add_text(height - 1, 0, "F3=Exit", Colors.PROTECTED)
 
-    def _read_key(self, fd) -> str:
-        """Read a key, handling escape sequences for function keys."""
-        ch = sys.stdin.read(1)
-
-        # Handle escape sequences (function keys, arrow keys)
-        if ch == '\x1b':
-            # Read potential escape sequence
-            seq1 = sys.stdin.read(1)
-            if seq1 == '[':
-                seq2 = sys.stdin.read(1)
-                # F3 is typically ESC [ 1 3 ~ or ESC O R
-                if seq2 == '1':
-                    seq3 = sys.stdin.read(1)
-                    if seq3 == '3':
-                        sys.stdin.read(1)  # Read the ~
-                        return 'F3'
-                elif seq2 == 'O':
-                    seq3 = sys.stdin.read(1)
-                    if seq3 == 'R':
-                        return 'F3'
-            elif seq1 == 'O':
-                seq2 = sys.stdin.read(1)
-                if seq2 == 'R':
-                    return 'F3'
-            # Not a recognized sequence, treat as escape
-            return 'ESC'
-
-        return ch
+        return screen
 
     def show(self) -> Optional[str]:
         """
@@ -166,35 +119,32 @@ class Menu:
         Returns:
             Selected key, or None if user exits (F3 or X)
         """
-        self.render()
+        height, width = self._get_terminal_size()
+        screen = self._build_screen(height, width)
+        result = screen.show()
 
-        # Save terminal settings
-        fd = sys.stdin.fileno()
-        old_settings = termios.tcgetattr(fd)
+        if result is None:
+            return None
 
-        try:
-            # Set raw mode for single character input
-            tty.setraw(fd)
+        # F3 or X = Exit
+        if result["aid"] == "F3":
+            return None
 
-            while True:
-                key = self._read_key(fd)
+        # Check if a key was pressed
+        if result["aid"] == "KEY":
+            key = result.get("key", "")
 
-                # F3 = Exit (IBM standard), also support X and Ctrl+C
-                if key == 'F3' or key.upper() == 'X' or key == '\x03':
-                    return None
+            # X also exits
+            if key.upper() == "X":
+                return None
 
-                # Find matching menu item
-                for item in self.items:
-                    if item.key.upper() == key.upper():
-                        # Restore terminal settings before calling action
-                        termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
-                        self.clear()
-                        item.action()
-                        return key
+            # Find matching menu item
+            for item in self.items:
+                if item.key.upper() == key.upper():
+                    item.action()
+                    return key
 
-        finally:
-            # Restore terminal settings
-            termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+        return None
 
     def run(self):
         """Run the menu in a loop until user exits."""
@@ -202,7 +152,6 @@ class Menu:
             while True:
                 result = self.show()
                 if result is None:
-                    self.clear()
                     break
         except KeyboardInterrupt:
-            self.clear()
+            pass

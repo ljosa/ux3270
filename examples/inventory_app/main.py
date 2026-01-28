@@ -116,8 +116,7 @@ class InventoryApp:
     def add_item(self):
         """Add a new item to inventory."""
         form = Form("ADD NEW ITEM", panel_id="INV001",
-                   help_text="Enter new item details. Required fields marked with *.",
-                   )
+                   help_text="Enter new item details. Required fields marked with *.")
         form.add_field("SKU", length=20, required=True,
                       help_text="Stock Keeping Unit - unique identifier for this item (e.g., ELEC-001)")
         form.add_field("Name", length=40, required=True,

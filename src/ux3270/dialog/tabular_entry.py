@@ -1,11 +1,8 @@
 """Tabular entry component for IBM 3270-style applications."""
 
-import sys
-import tty
-import termios
 from typing import List, Dict, Any, Optional, Callable
 
-from ux3270.panel import Colors, FieldType
+from ux3270.panel import Screen, Field, FieldType, Colors
 
 
 class Column:
@@ -49,15 +46,10 @@ class TabularEntry:
     - Tab navigates between editable cells
     - F7/F8 for pagination
     - Enter submits, F3 cancels
+
+    The dialog builds a Screen definition and hands control to Screen
+    for all rendering and input handling.
     """
-
-    TITLE_ROW = 0
-    INSTRUCTION_ROW = 1
-    HEADER_ROW = 3
-    DATA_START_ROW = 5
-
-    HEADER_LINES = 5     # Title + instruction + blank + headers + separator
-    FOOTER_LINES = 4     # Error + message + separator + function keys
 
     def __init__(self, title: str = "", panel_id: str = "",
                  instruction: str = "Enter values and press Enter to submit"):
@@ -127,28 +119,6 @@ class TabularEntry:
         except Exception:
             return 24, 80
 
-    def _get_page_size(self, height: int) -> int:
-        """Calculate number of data rows that fit on screen."""
-        return max(1, height - self.HEADER_LINES - self.FOOTER_LINES)
-
-    def _clear(self):
-        """Clear the terminal screen."""
-        print("\033[2J\033[H", end="", flush=True)
-
-    def _move_cursor(self, row: int, col: int):
-        """Move cursor to specified position (0-indexed)."""
-        print(f"\033[{row + 1};{col + 1}H", end="", flush=True)
-
-    def _get_editable_cells(self, page_size: int) -> List[tuple]:
-        """Get list of (row_idx, col_idx, col) for editable cells on current page."""
-        cells = []
-        end_row = min(self.current_row + page_size, len(self.rows))
-        for row_idx in range(self.current_row, end_row):
-            for col_idx, col in enumerate(self.columns):
-                if col.editable:
-                    cells.append((row_idx, col_idx, col))
-        return cells
-
     def _get_col_position(self, col_idx: int) -> int:
         """Get the starting column position for a column index."""
         pos = 2  # Initial indent
@@ -158,180 +128,108 @@ class TabularEntry:
             pos += col.width + 3  # width + separator
         return pos
 
-    def _render(self, page_size: int, height: int, width: int,
-                current_cell: int, cursor_pos: int, cells: List[tuple],
-                full_redraw: bool = True):
-        """Render the tabular entry."""
-        if full_redraw:
-            self._clear()
+    def _build_screen(self, page: int, page_size: int, height: int, width: int) -> Screen:
+        """Build a Screen with all text and fields for the current page."""
+        screen = Screen()
 
-            # Row 0: Panel ID and Title
-            self._move_cursor(self.TITLE_ROW, 0)
-            if self.panel_id:
-                print(f"{Colors.PROTECTED}{self.panel_id}{Colors.RESET}", end="", flush=True)
-            if self.title:
-                title_col = max(0, (width - len(self.title)) // 2)
-                self._move_cursor(self.TITLE_ROW, title_col)
-                print(f"{Colors.title(self.title)}", end="", flush=True)
+        # Layout constants
+        title_row = 0
+        instruction_row = 1
+        header_row = 3
+        data_start_row = 5
 
-            # Row 1: Instruction
-            self._move_cursor(self.INSTRUCTION_ROW, 0)
-            print(f"{Colors.PROTECTED}{self.instruction}{Colors.RESET}", end="", flush=True)
+        # Title
+        if self.panel_id:
+            screen.add_text(title_row, 0, self.panel_id, Colors.PROTECTED)
+        if self.title:
+            title_col = max(0, (width - len(self.title)) // 2)
+            screen.add_text(title_row, title_col, self.title, Colors.INTENSIFIED)
 
-            # Row 3: Column headers
-            self._move_cursor(self.HEADER_ROW, 0)
-            header_parts = []
-            for col in self.columns:
-                # Show * for required editable columns
-                if col.editable and col.required:
-                    header_parts.append(Colors.header(f"*{col.name}"[:col.width].ljust(col.width)))
+        # Instruction
+        screen.add_text(instruction_row, 0, self.instruction, Colors.PROTECTED)
+
+        # Column headers
+        header_parts = []
+        for col in self.columns:
+            if col.editable and col.required:
+                header_parts.append(f"*{col.name}"[:col.width].ljust(col.width))
+            else:
+                header_parts.append(col.name[:col.width].ljust(col.width))
+        header_text = " │ ".join(header_parts)
+        screen.add_text(header_row, 2, header_text, Colors.INTENSIFIED)
+
+        # Separator
+        sep_parts = ["─" * col.width for col in self.columns]
+        sep_text = "─┼─".join(sep_parts)
+        screen.add_text(header_row + 1, 2, sep_text, Colors.PROTECTED)
+
+        # Data rows
+        start_row_idx = page * page_size
+        end_row_idx = min(start_row_idx + page_size, len(self.rows))
+
+        for display_idx, row_idx in enumerate(range(start_row_idx, end_row_idx)):
+            row = self.rows[row_idx]
+            screen_row = data_start_row + display_idx
+
+            col_pos = 2
+            for col_idx, col in enumerate(self.columns):
+                if col.editable:
+                    # Add Field for editable cell
+                    current_val = self.values[row_idx].get(col.name, "")
+                    field = Field(
+                        row=screen_row,
+                        col=col_pos,
+                        length=col.width,
+                        field_type=col.field_type,
+                        label=f"{col.name}_{row_idx}",
+                        default=current_val,
+                        required=col.required,
+                        validator=col.validator
+                    )
+                    screen.add_field(field)
                 else:
-                    header_parts.append(Colors.header(col.name[:col.width].ljust(col.width)))
-            print("  " + f" {Colors.PROTECTED}│{Colors.RESET} ".join(header_parts), end="", flush=True)
+                    # Static text
+                    val = str(row.get(col.name, ""))[:col.width].ljust(col.width)
+                    screen.add_text(screen_row, col_pos, val, Colors.PROTECTED)
 
-            # Row 4: Separator
-            self._move_cursor(self.HEADER_ROW + 1, 0)
-            sep_parts = ["─" * col.width for col in self.columns]
-            print(f"  {Colors.PROTECTED}" + "─┼─".join(sep_parts) + f"{Colors.RESET}", end="", flush=True)
+                # Add separator after each column except the last
+                if col_idx < len(self.columns) - 1:
+                    screen.add_text(screen_row, col_pos + col.width + 1, "│", Colors.PROTECTED)
 
-            # Data rows
-            end_row = min(self.current_row + page_size, len(self.rows))
-            for display_idx, row_idx in enumerate(range(self.current_row, end_row)):
-                row = self.rows[row_idx]
-                self._move_cursor(self.DATA_START_ROW + display_idx, 0)
+                col_pos += col.width + 3  # width + " │ "
 
-                cell_parts = []
-                for col_idx, col in enumerate(self.columns):
-                    if col.editable:
-                        # Input field - green with underscore placeholder
-                        val = self.values[row_idx].get(col.name, "")
-                        display_val = val[:col.width].ljust(col.width)
-                        remaining = col.width - len(val)
-                        if remaining > 0:
-                            display_val = f"{Colors.INPUT}{val}{Colors.DIM}{'_' * remaining}{Colors.RESET}"
-                        else:
-                            display_val = f"{Colors.INPUT}{val[:col.width]}{Colors.RESET}"
-                        cell_parts.append(display_val)
-                    else:
-                        # Static field - turquoise
-                        val = str(row.get(col.name, ""))[:col.width].ljust(col.width)
-                        cell_parts.append(f"{Colors.PROTECTED}{val}{Colors.RESET}")
+        # Error line
+        if self.error_message:
+            screen.add_text(height - 4, 0, self.error_message, Colors.ERROR)
 
-                print("  " + f" {Colors.PROTECTED}│{Colors.RESET} ".join(cell_parts), end="", flush=True)
-
-            # Error line (height-4)
-            self._move_cursor(height - 4, 0)
-            print(" " * width, end="", flush=True)  # Clear line
-            if self.error_message:
-                self._move_cursor(height - 4, 0)
-                print(Colors.error(self.error_message), end="", flush=True)
-
-            # Message line (height-3): Row count
-            self._move_cursor(height - 3, 0)
-            if self.rows:
-                if len(self.rows) > page_size:
-                    start_display = self.current_row + 1
-                    end_display = min(self.current_row + page_size, len(self.rows))
-                    count_msg = f"ROW {start_display} TO {end_display} OF {len(self.rows)}"
-                else:
-                    count_msg = f"ROWS {len(self.rows)}"
-                self._move_cursor(height - 3, width - len(count_msg) - 1)
-                print(Colors.info(count_msg), end="", flush=True)
-
-            # Separator (height-2)
-            self._move_cursor(height - 2, 0)
-            print(Colors.dim("─" * width), end="", flush=True)
-
-            # Function keys (height-1)
-            self._move_cursor(height - 1, 0)
-            hints = [Colors.info("F3=Cancel"), Colors.info("Enter=Submit")]
+        # Row count message
+        if self.rows:
             if len(self.rows) > page_size:
-                if self.current_row > 0:
-                    hints.append(Colors.info("F7=Up"))
-                if self.current_row + page_size < len(self.rows):
-                    hints.append(Colors.info("F8=Down"))
-            print("  ".join(hints), end="", flush=True)
-        else:
-            # Partial update: refresh only editable cells on current page
-            end_row = min(self.current_row + page_size, len(self.rows))
-            for display_idx, row_idx in enumerate(range(self.current_row, end_row)):
-                for col_idx, col in enumerate(self.columns):
-                    if col.editable:
-                        col_pos = self._get_col_position(col_idx)
-                        self._move_cursor(self.DATA_START_ROW + display_idx, col_pos)
-                        val = self.values[row_idx].get(col.name, "")
-                        remaining = col.width - len(val)
-                        if remaining > 0:
-                            print(f"{Colors.INPUT}{val}{Colors.DIM}{'_' * remaining}{Colors.RESET}", end="", flush=True)
-                        else:
-                            print(f"{Colors.INPUT}{val[:col.width]}{Colors.RESET}", end="", flush=True)
+                count_msg = f"ROW {start_row_idx + 1} TO {end_row_idx} OF {len(self.rows)}"
+            else:
+                count_msg = f"ROWS {len(self.rows)}"
+            screen.add_text(height - 3, width - len(count_msg) - 1, count_msg, Colors.PROTECTED)
 
-        # Position cursor at current cell
-        if cells and 0 <= current_cell < len(cells):
-            row_idx, col_idx, col = cells[current_cell]
-            display_row = row_idx - self.current_row
-            col_pos = self._get_col_position(col_idx)
-            self._move_cursor(self.DATA_START_ROW + display_row, col_pos + cursor_pos)
+        # Separator
+        screen.add_text(height - 2, 0, "─" * width, Colors.DIM)
 
-    def _read_key(self) -> str:
-        """Read a key, handling escape sequences."""
-        ch = sys.stdin.read(1)
+        # Function keys
+        fkeys = ["F3=Cancel", "Enter=Submit"]
+        if len(self.rows) > page_size:
+            if page > 0:
+                fkeys.append("F7=Up")
+            if end_row_idx < len(self.rows):
+                fkeys.append("F8=Down")
+        screen.add_text(height - 1, 0, "  ".join(fkeys), Colors.PROTECTED)
 
-        if ch == '\x1b':
-            seq1 = sys.stdin.read(1)
-            if seq1 == '[':
-                seq2 = sys.stdin.read(1)
-                if seq2 == 'A':
-                    return 'UP'
-                elif seq2 == 'B':
-                    return 'DOWN'
-                elif seq2 == 'C':
-                    return 'RIGHT'
-                elif seq2 == 'D':
-                    return 'LEFT'
-                elif seq2 == 'H':
-                    return 'HOME'
-                elif seq2 == 'F':
-                    return 'END'
-                elif seq2 == '1':
-                    seq3 = sys.stdin.read(1)
-                    seq4 = sys.stdin.read(1)
-                    if seq3 == '3':
-                        return 'F3'
-                    elif seq3 == '8':
-                        return 'F7'
-                    elif seq3 == '9':
-                        return 'F8'
-                    elif seq3 == '~':
-                        return 'HOME'
-                elif seq2 == '2':
-                    sys.stdin.read(1)
-                    return 'INSERT'
-                elif seq2 == '3':
-                    sys.stdin.read(1)
-                    return 'DELETE'
-                elif seq2 == '4':
-                    sys.stdin.read(1)
-                    return 'END'
-            elif seq1 == 'O':
-                seq2 = sys.stdin.read(1)
-                if seq2 == 'R':
-                    return 'F3'
-                elif seq2 == 'H':
-                    return 'HOME'
-                elif seq2 == 'F':
-                    return 'END'
-            return 'ESC'
+        return screen
 
-        return ch
-
-    def _validate(self) -> Optional[tuple]:
+    def _validate_all(self) -> Optional[str]:
         """
         Validate all editable fields.
 
         Returns:
-            (row_idx, col, error_message) for first validation failure,
-            or None if all valid.
+            Error message for first validation failure, or None if all valid.
         """
         for row_idx, row_values in enumerate(self.values):
             for col in self.columns:
@@ -342,17 +240,17 @@ class TabularEntry:
 
                 # Required check
                 if col.required and not val.strip():
-                    return (row_idx, col, f"{col.name} is required")
+                    return f"Row {row_idx + 1}: {col.name} is required"
 
                 # Numeric check
                 if col.field_type == FieldType.NUMERIC and val.strip():
                     if not val.replace('.', '').replace('-', '').isdigit():
-                        return (row_idx, col, f"{col.name} must be numeric")
+                        return f"Row {row_idx + 1}: {col.name} must be numeric"
 
                 # Custom validator
                 if col.validator and val.strip():
                     if not col.validator(val):
-                        return (row_idx, col, f"{col.name} is invalid")
+                        return f"Row {row_idx + 1}: {col.name} is invalid"
 
         return None
 
@@ -368,194 +266,54 @@ class TabularEntry:
             return []
 
         height, width = self._get_terminal_size()
-        page_size = self._get_page_size(height)
+        # Calculate page size
+        header_lines = 5  # Title + instruction + blank + headers + separator
+        footer_lines = 4  # Error + message + separator + function keys
+        page_size = max(1, height - header_lines - footer_lines)
 
-        cells = self._get_editable_cells(page_size)
-        if not cells:
-            # No editable cells, just display
-            self._render(page_size, height, width, 0, 0, [], full_redraw=True)
-            return [dict(self.rows[i], **self.values[i]) for i in range(len(self.rows))]
+        page = self.current_row // page_size if page_size > 0 else 0
 
-        current_cell = 0
-        cursor_pos = 0
-        insert_mode = True
-        need_full_redraw = True
+        while True:
+            screen = self._build_screen(page, page_size, height, width)
+            result = screen.show()
 
-        fd = sys.stdin.fileno()
-        old_settings = termios.tcgetattr(fd)
+            if result is None:
+                return None
 
-        try:
-            while True:
-                # Recalculate cells if page changed
-                cells = self._get_editable_cells(page_size)
-                if not cells:
-                    break
+            aid = result["aid"]
+            fields = result["fields"]
 
-                # Clamp current_cell to valid range
-                if current_cell >= len(cells):
-                    current_cell = len(cells) - 1
-                if current_cell < 0:
-                    current_cell = 0
+            # Update values from fields
+            for key, value in fields.items():
+                # Field labels are "colname_rowidx"
+                if "_" in key:
+                    parts = key.rsplit("_", 1)
+                    if len(parts) == 2:
+                        col_name, row_idx_str = parts
+                        try:
+                            row_idx = int(row_idx_str)
+                            if row_idx < len(self.values) and col_name in self.values[row_idx]:
+                                self.values[row_idx][col_name] = value
+                        except ValueError:
+                            pass
 
-                row_idx, col_idx, col = cells[current_cell]
-                val = self.values[row_idx].get(col.name, "")
+            if aid == "F3":
+                return None
 
-                # Clamp cursor position
-                cursor_pos = min(cursor_pos, len(val))
+            elif aid == "ENTER":
+                # Validate and submit
+                self.error_message = self._validate_all() or ""
+                if not self.error_message:
+                    return [dict(self.rows[i], **self.values[i]) for i in range(len(self.rows))]
+                # Error - continue to redisplay with error message
 
-                self._render(page_size, height, width, current_cell, cursor_pos,
-                            cells, full_redraw=need_full_redraw)
-                need_full_redraw = False
-
-                tty.setraw(fd)
-                key = self._read_key()
-                termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
-
-                if key == 'F3' or key == '\x03':
-                    self._clear()
-                    return None
-
-                elif key in ('\r', '\n'):
-                    # Validate and submit
-                    validation_error = self._validate()
-                    if validation_error:
-                        err_row_idx, err_col, err_msg = validation_error
-                        self.error_message = err_msg
-
-                        # Find the cell index for the error field
-                        for i, (r_idx, c_idx, c) in enumerate(cells):
-                            if r_idx == err_row_idx and c.name == err_col.name:
-                                # Check if error row is on current page
-                                if err_row_idx < self.current_row or err_row_idx >= self.current_row + page_size:
-                                    self.current_row = err_row_idx
-                                    cells = self._get_editable_cells(page_size)
-                                    for i, (r_idx, c_idx, c) in enumerate(cells):
-                                        if r_idx == err_row_idx and c.name == err_col.name:
-                                            current_cell = i
-                                            break
-                                else:
-                                    current_cell = i
-                                cursor_pos = 0
-                                break
-                        need_full_redraw = True
-                    else:
-                        # Success - return results
-                        self._clear()
-                        return [dict(self.rows[i], **self.values[i]) for i in range(len(self.rows))]
-
-                elif key == '\t':
-                    # Tab to next editable cell
+            elif aid == "F7" or aid == "PGUP":
+                if page > 0:
+                    page -= 1
                     self.error_message = ""
-                    if current_cell < len(cells) - 1:
-                        current_cell += 1
-                        cursor_pos = 0
-                    row_idx, col_idx, col = cells[current_cell]
-                    # Check if we need to scroll
-                    if row_idx >= self.current_row + page_size:
-                        self.current_row = row_idx
-                        need_full_redraw = True
 
-                elif key == '\x1b[Z' or key == 'BACKTAB':  # Shift+Tab
+            elif aid == "F8" or aid == "PGDN":
+                start_idx = page * page_size
+                if start_idx + page_size < len(self.rows):
+                    page += 1
                     self.error_message = ""
-                    if current_cell > 0:
-                        current_cell -= 1
-                        cursor_pos = 0
-                    row_idx, col_idx, col = cells[current_cell]
-                    if row_idx < self.current_row:
-                        self.current_row = row_idx
-                        need_full_redraw = True
-
-                elif key == 'UP':
-                    # Move to same column in previous row
-                    self.error_message = ""
-                    row_idx, col_idx, col = cells[current_cell]
-                    for i, (r, c, _) in enumerate(cells):
-                        if r == row_idx - 1 and c == col_idx:
-                            current_cell = i
-                            cursor_pos = 0
-                            if r < self.current_row:
-                                self.current_row = r
-                                need_full_redraw = True
-                            break
-
-                elif key == 'DOWN':
-                    # Move to same column in next row
-                    self.error_message = ""
-                    row_idx, col_idx, col = cells[current_cell]
-                    for i, (r, c, _) in enumerate(cells):
-                        if r == row_idx + 1 and c == col_idx:
-                            current_cell = i
-                            cursor_pos = 0
-                            if r >= self.current_row + page_size:
-                                self.current_row = r - page_size + 1
-                                need_full_redraw = True
-                            break
-
-                elif key == 'LEFT':
-                    if cursor_pos > 0:
-                        cursor_pos -= 1
-
-                elif key == 'RIGHT':
-                    if cursor_pos < len(val):
-                        cursor_pos += 1
-
-                elif key == 'HOME':
-                    cursor_pos = 0
-
-                elif key == 'END':
-                    cursor_pos = len(val)
-
-                elif key == 'INSERT':
-                    insert_mode = not insert_mode
-
-                elif key == 'DELETE':
-                    if cursor_pos < len(val):
-                        val = val[:cursor_pos] + val[cursor_pos + 1:]
-                        self.values[row_idx][col.name] = val
-
-                elif key == '\x7f' or key == '\x08':  # Backspace
-                    if cursor_pos > 0:
-                        val = val[:cursor_pos - 1] + val[cursor_pos:]
-                        self.values[row_idx][col.name] = val
-                        cursor_pos -= 1
-
-                elif key == '\x05':  # Ctrl+E - Erase to end of field
-                    val = val[:cursor_pos]
-                    self.values[row_idx][col.name] = val
-
-                elif len(key) == 1 and key.isprintable():
-                    # Type character
-                    if col.field_type == FieldType.NUMERIC:
-                        if not (key.isdigit() or key in '.-'):
-                            continue
-
-                    if insert_mode:
-                        if len(val) < col.width:
-                            val = val[:cursor_pos] + key + val[cursor_pos:]
-                            cursor_pos += 1
-                    else:
-                        if cursor_pos < col.width:
-                            val = val[:cursor_pos] + key + val[cursor_pos + 1:]
-                            cursor_pos += 1
-
-                    self.values[row_idx][col.name] = val
-
-                elif key == 'F7':
-                    if self.current_row > 0:
-                        self.current_row = max(0, self.current_row - page_size)
-                        current_cell = 0
-                        cursor_pos = 0
-                        need_full_redraw = True
-
-                elif key == 'F8':
-                    if self.current_row + page_size < len(self.rows):
-                        self.current_row = min(len(self.rows) - page_size,
-                                              self.current_row + page_size)
-                        current_cell = 0
-                        cursor_pos = 0
-                        need_full_redraw = True
-
-        finally:
-            termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
-
-        return None

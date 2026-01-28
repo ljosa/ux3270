@@ -1,11 +1,8 @@
 """Table display component for IBM 3270-style applications."""
 
-import sys
-import tty
-import termios
-from typing import List, Optional, Literal
+from typing import List, Optional, Literal, Dict, Any
 
-from ux3270.panel import Colors
+from ux3270.panel import Screen, Field, FieldType, Colors
 
 
 class TableColumn:
@@ -32,35 +29,32 @@ class Table:
 
     Displays tabular data with column headers following CUA conventions:
     - Panel ID at top-left, title centered
+    - Optional header fields (e.g., "Position to" filter)
     - Column headers in intensified text
     - Data rows in default (green) color
     - Row count/pagination info on message line
     - F7/F8 for page up/down (CUA standard)
     - Function keys at bottom
+
+    The dialog builds a Screen definition and hands control to Screen
+    for all rendering and input handling.
     """
 
-    # CUA layout constants
-    TITLE_ROW = 0
-    HEADER_ROW = 2       # Column headers
-    DATA_START_ROW = 4   # First data row (after header + separator)
-
-    # Lines reserved for chrome
-    HEADER_LINES = 4     # Title + blank + column header + separator
-    FOOTER_LINES = 3     # Message + separator + function keys
-
-    def __init__(self, title: str = "", panel_id: str = ""):
+    def __init__(self, title: str = "", panel_id: str = "", instruction: str = ""):
         """
         Initialize a table.
 
         Args:
             title: Table title (displayed in uppercase per IBM convention)
             panel_id: Optional panel identifier (shown at top-left per CUA)
+            instruction: Optional instruction text
         """
         self.title = title.upper() if title else ""
         self.panel_id = panel_id.upper() if panel_id else ""
+        self.instruction = instruction
         self._columns: List[TableColumn] = []
         self.rows: List[List[str]] = []
-        self.col_widths: List[int] = []
+        self._header_fields: List[Dict[str, Any]] = []
         self.current_row = 0  # First visible row index
 
     def add_column(self, name: str, width: Optional[int] = None,
@@ -79,6 +73,33 @@ class Table:
         self._columns.append(TableColumn(name, width, align))
         return self
 
+    def add_header_field(self, label: str, length: int = 10, default: str = "",
+                         field_type: FieldType = FieldType.TEXT) -> "Table":
+        """
+        Add a header field (e.g., "Position to" filter).
+
+        Args:
+            label: Field label
+            length: Field length
+            default: Default value
+            field_type: Field type
+
+        Returns:
+            Self for method chaining
+        """
+        self._header_fields.append({
+            "label": label,
+            "length": length,
+            "default": default,
+            "field_type": field_type,
+            "value": default
+        })
+        return self
+
+    def get_header_values(self) -> Dict[str, str]:
+        """Get current header field values."""
+        return {f["label"]: f["value"] for f in self._header_fields}
+
     def add_row(self, *values) -> "Table":
         """
         Add a row to the table.
@@ -92,22 +113,24 @@ class Table:
         self.rows.append(list(values))
         return self
 
-    def _calculate_widths(self):
+    def _calculate_widths(self) -> List[int]:
         """Calculate column widths based on content."""
         if not self._columns:
-            return
+            return []
 
-        self.col_widths = []
+        widths = []
         for col in self._columns:
             if col.width is not None:
-                self.col_widths.append(col.width)
+                widths.append(col.width)
             else:
-                self.col_widths.append(len(col.name))
+                widths.append(len(col.name))
 
         for row in self.rows:
             for i, val in enumerate(row):
-                if i < len(self.col_widths) and self._columns[i].width is None:
-                    self.col_widths[i] = max(self.col_widths[i], len(str(val)))
+                if i < len(widths) and self._columns[i].width is None:
+                    widths[i] = max(widths[i], len(str(val)))
+
+        return widths
 
     def _get_terminal_size(self) -> tuple:
         """Get terminal dimensions."""
@@ -116,174 +139,140 @@ class Table:
             size = os.get_terminal_size()
             return size.lines, size.columns
         except Exception:
-            return 24, 80  # IBM 3270 Model 2 standard
+            return 24, 80
 
-    def _get_page_size(self, height: int) -> int:
-        """Calculate number of data rows that fit on screen."""
-        return max(1, height - self.HEADER_LINES - self.FOOTER_LINES)
+    def _build_screen(self, page: int, page_size: int, height: int, width: int) -> Screen:
+        """Build a Screen with all text and fields for the current page."""
+        screen = Screen()
+        col_widths = self._calculate_widths()
 
-    def clear(self):
-        """Clear the terminal screen."""
-        print("\033[2J\033[H", end="", flush=True)
+        # Calculate layout
+        header_rows = len(self._header_fields)
+        title_row = 0
+        instruction_row = 1
+        header_fields_start = 3
+        column_headers_row = 3 + header_rows + (1 if header_rows else 0)
+        data_start_row = column_headers_row + 2
 
-    def _move_cursor(self, row: int, col: int):
-        """Move cursor to specified position (0-indexed)."""
-        print(f"\033[{row + 1};{col + 1}H", end="", flush=True)
-
-    def render(self, page_size: int, height: int, width: int):
-        """Render the table following CUA layout.
-
-        CUA Layout (adapted for variable height):
-        - Row 0: Panel ID (left) + Title (centered)
-        - Row 2: Column headers
-        - Row 3: Separator
-        - Rows 4 to height-4: Data rows
-        - Row height-3: Message line (row count/pagination)
-        - Row height-2: Separator
-        - Row height-1: Function keys
-        """
-        self.clear()
-        self._calculate_widths()
-
-        # Row 0: Panel ID (left) and Title (centered)
-        self._move_cursor(self.TITLE_ROW, 0)
+        # Title
         if self.panel_id:
-            print(f"{Colors.PROTECTED}{self.panel_id}{Colors.RESET}", end="", flush=True)
+            screen.add_text(title_row, 0, self.panel_id, Colors.PROTECTED)
         if self.title:
             title_col = max(0, (width - len(self.title)) // 2)
-            self._move_cursor(self.TITLE_ROW, title_col)
-            print(f"{Colors.title(self.title)}", end="", flush=True)
+            screen.add_text(title_row, title_col, self.title, Colors.INTENSIFIED)
 
-        # Row 2: Column headers (intensified per CUA convention)
+        # Instruction
+        if self.instruction:
+            screen.add_text(instruction_row, 0, self.instruction, Colors.PROTECTED)
+
+        # Header fields
+        for i, hf in enumerate(self._header_fields):
+            row = header_fields_start + i
+            label_text = f"{hf['label']} . . ."
+            screen.add_text(row, 2, label_text, Colors.PROTECTED)
+            col = 2 + len(label_text) + 1
+            field = Field(row=row, col=col, length=hf["length"],
+                         field_type=hf["field_type"], label=hf["label"],
+                         default=hf["value"])
+            screen.add_field(field)
+
+        # Column headers
         if self._columns:
-            self._move_cursor(self.HEADER_ROW, 0)
             header_parts = []
             for i, col in enumerate(self._columns):
-                w = self.col_widths[i] if i < len(self.col_widths) else len(col.name)
+                w = col_widths[i] if i < len(col_widths) else len(col.name)
                 if col.align == "right":
-                    header_parts.append(Colors.header(col.name.rjust(w)))
+                    header_parts.append(col.name.rjust(w))
                 else:
-                    header_parts.append(Colors.header(col.name.ljust(w)))
-            print("  " + f" {Colors.PROTECTED}│{Colors.RESET} ".join(header_parts), end="", flush=True)
+                    header_parts.append(col.name.ljust(w))
+            header_text = " │ ".join(header_parts)
+            screen.add_text(column_headers_row, 2, header_text, Colors.INTENSIFIED)
 
-            # Row 3: Separator line
-            self._move_cursor(self.HEADER_ROW + 1, 0)
-            sep_parts = []
-            for w in self.col_widths:
-                sep_parts.append("─" * w)
-            print(f"  {Colors.PROTECTED}" + "─┼─".join(sep_parts) + f"{Colors.RESET}", end="", flush=True)
+            # Separator line
+            sep_parts = ["─" * w for w in col_widths]
+            sep_text = "─┼─".join(sep_parts)
+            screen.add_text(column_headers_row + 1, 2, sep_text, Colors.PROTECTED)
 
-        # Data rows (paginated, default green color)
-        end_row = min(self.current_row + page_size, len(self.rows))
-        visible_rows = self.rows[self.current_row:end_row]
+        # Data rows
+        start_row_idx = page * page_size
+        end_row_idx = min(start_row_idx + page_size, len(self.rows))
+        visible_rows = self.rows[start_row_idx:end_row_idx]
 
-        for i, row in enumerate(visible_rows):
-            self._move_cursor(self.DATA_START_ROW + i, 0)
+        for i, data_row in enumerate(visible_rows):
+            screen_row = data_start_row + i
             row_parts = []
-            for j, val in enumerate(row):
-                w = self.col_widths[j] if j < len(self.col_widths) else len(str(val))
+            for j, val in enumerate(data_row):
+                w = col_widths[j] if j < len(col_widths) else len(str(val))
                 col = self._columns[j] if j < len(self._columns) else None
                 if col and col.align == "right":
-                    row_parts.append(f"{Colors.DEFAULT}{str(val).rjust(w)}{Colors.RESET}")
+                    row_parts.append(str(val).rjust(w))
                 else:
-                    row_parts.append(f"{Colors.DEFAULT}{str(val).ljust(w)}{Colors.RESET}")
-            print(f"  " + f" {Colors.PROTECTED}│{Colors.RESET} ".join(row_parts), end="", flush=True)
+                    row_parts.append(str(val).ljust(w))
+            row_text = " │ ".join(row_parts)
+            screen.add_text(screen_row, 2, row_text, Colors.DEFAULT)
 
-        # Message line (height-3): Row count and pagination info
-        self._move_cursor(height - 3, 0)
+        # Row count message
         if self.rows:
             if len(self.rows) > page_size:
-                start_display = self.current_row + 1
-                end_display = min(self.current_row + page_size, len(self.rows))
-                count_msg = f"ROW {start_display} TO {end_display} OF {len(self.rows)}"
+                count_msg = f"ROW {start_row_idx + 1} TO {end_row_idx} OF {len(self.rows)}"
             else:
                 count_msg = f"ROWS {len(self.rows)}"
-            print(Colors.info(count_msg), end="", flush=True)
+            screen.add_text(height - 3, width - len(count_msg) - 1, count_msg, Colors.PROTECTED)
 
-        # Separator (height-2) - full width per CUA
-        self._move_cursor(height - 2, 0)
-        print(Colors.dim("─" * width), end="", flush=True)
+        # Separator
+        screen.add_text(height - 2, 0, "─" * width, Colors.DIM)
 
-        # Function keys (height-1)
-        self._move_cursor(height - 1, 0)
-        hints = [Colors.info("F3=Return")]
+        # Function keys
+        fkeys = ["F3=Return"]
         if len(self.rows) > page_size:
-            if self.current_row > 0:
-                hints.append(Colors.info("F7=Up"))
-            if self.current_row + page_size < len(self.rows):
-                hints.append(Colors.info("F8=Down"))
-        print("  ".join(hints), end="", flush=True)
+            if page > 0:
+                fkeys.append("F7=Up")
+            if end_row_idx < len(self.rows):
+                fkeys.append("F8=Down")
+        screen.add_text(height - 1, 0, "  ".join(fkeys), Colors.PROTECTED)
 
-    def _read_key(self, fd) -> str:
-        """Read a key, handling escape sequences for function keys."""
-        ch = sys.stdin.read(1)
+        return screen
 
-        # Handle escape sequences (function keys)
-        if ch == '\x1b':
-            seq1 = sys.stdin.read(1)
-            if seq1 == '[':
-                seq2 = sys.stdin.read(1)
-                if seq2 == '1':
-                    seq3 = sys.stdin.read(1)
-                    seq4 = sys.stdin.read(1)  # Read the ~
-                    if seq3 == '3':
-                        return 'F3'
-                    elif seq3 == '8':
-                        return 'F7'
-                    elif seq3 == '9':
-                        return 'F8'
-                # Some terminals use different sequences
-                elif seq2 == '1' and seq1 == 'O':
-                    pass
-            elif seq1 == 'O':
-                seq2 = sys.stdin.read(1)
-                if seq2 == 'R':
-                    return 'F3'
-                elif seq2 == 'Q':
-                    return 'F7'  # Some terminals
-                elif seq2 == 'S':
-                    return 'F8'  # Some terminals
-            return 'ESC'
+    def show(self) -> Optional[Dict[str, str]]:
+        """
+        Display the table with pagination and wait for user input.
 
-        return ch
-
-    def show(self):
-        """Display the table with pagination and wait for user input."""
+        Returns:
+            Dictionary of header field values, or None if no header fields.
+        """
         height, width = self._get_terminal_size()
-        page_size = self._get_page_size(height)
 
-        # Save terminal settings
-        fd = sys.stdin.fileno()
-        old_settings = termios.tcgetattr(fd)
+        # Calculate page size based on available space
+        header_rows = len(self._header_fields)
+        chrome_lines = 3 + header_rows + (1 if header_rows else 0) + 4 + 3
+        page_size = max(1, height - chrome_lines)
 
-        try:
-            while True:
-                self.render(page_size, height, width)
+        # Calculate initial page from current_row
+        page = self.current_row // page_size if page_size > 0 else 0
 
-                # Set raw mode for single character input
-                tty.setraw(fd)
+        while True:
+            screen = self._build_screen(page, page_size, height, width)
+            result = screen.show()
 
-                key = self._read_key(fd)
+            if result is None:
+                return self.get_header_values() if self._header_fields else None
 
-                # Restore settings before processing (in case we exit)
-                termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+            aid = result["aid"]
+            fields = result["fields"]
 
-                if key in ('F3', '\r', '\n', 'q', 'Q', '\x03'):
-                    # F3, Enter, Q, or Ctrl+C = Return
-                    break
-                elif key == 'F7' or key == 'k' or key == 'K':
-                    # Page up
-                    if self.current_row > 0:
-                        self.current_row = max(0, self.current_row - page_size)
-                elif key == 'F8' or key == 'j' or key == 'J':
-                    # Page down
-                    if self.current_row + page_size < len(self.rows):
-                        self.current_row = min(
-                            len(self.rows) - 1,
-                            self.current_row + page_size
-                        )
+            # Update header field values
+            for hf in self._header_fields:
+                if hf["label"] in fields:
+                    hf["value"] = fields[hf["label"]]
 
-        finally:
-            # Ensure terminal settings are restored
-            termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
-            self.clear()
+            if aid == "F3" or aid == "ENTER":
+                return self.get_header_values() if self._header_fields else None
+
+            elif aid == "F7" or aid == "PGUP":
+                if page > 0:
+                    page -= 1
+
+            elif aid == "F8" or aid == "PGDN":
+                start_idx = page * page_size
+                if start_idx + page_size < len(self.rows):
+                    page += 1

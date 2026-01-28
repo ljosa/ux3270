@@ -76,15 +76,21 @@ def test_screen_api():
     print("\n" + "="*60)
     print("TEST 4: Low-Level Screen API")
     print("="*60)
-    
-    screen = Screen("LOGIN SCREEN")
-    screen.add_text(2, 2, "Welcome to the System")
+
+    from ux3270.panel import Colors
+
+    screen = Screen()
+    # Add title using add_text
+    screen.add_text(0, 30, "LOGIN SCREEN", Colors.INTENSIFIED)
+    screen.add_text(2, 2, "Welcome to the System", Colors.PROTECTED)
+    screen.add_text(4, 2, "Username . .", Colors.PROTECTED)
+    screen.add_text(6, 2, "Password . .", Colors.PROTECTED)
     screen.add_field(Field(row=4, col=15, length=20, label="Username", required=True))
-    screen.add_field(Field(row=6, col=15, length=20, label="Password", 
+    screen.add_field(Field(row=6, col=15, length=20, label="Password",
                           field_type=FieldType.PASSWORD, required=True))
-    
+
     print("\nScreen created with:")
-    print("- Title: LOGIN SCREEN")
+    print("- Title: LOGIN SCREEN (via add_text)")
     print("- Static text at row 2, col 2")
     print("- 2 fields: Username and Password")
     print("- Password field will display asterisks")
