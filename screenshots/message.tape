@@ -1,8 +1,8 @@
 Output message_temp.gif
 Set Shell bash
-Set Width 680
+Set Width 830
 Set Height 384
-Set FontFamily "3270"
+Set FontFamily "JetBrains Mono NL"
 Set FontSize 16
 Set Padding 0
 Set TypingSpeed 0

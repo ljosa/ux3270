@@ -10,7 +10,7 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 IMAGES_DIR="$PROJECT_DIR/docs/images"
-FONT_PATH="$SCRIPT_DIR/fonts/3270-Regular.ttf"
+FONT_PATH="$SCRIPT_DIR/fonts/JetBrainsMonoNL-Regular.ttf"
 
 # Minimum file size in bytes (screenshots should be at least 1KB)
 MIN_SIZE=1000
@@ -26,7 +26,7 @@ run_vhs() {
 
     docker run --rm -t \
         -v "$PROJECT_DIR:/app" \
-        -v "$FONT_PATH:/usr/share/fonts/3270.ttf" \
+        -v "$FONT_PATH:/usr/share/fonts/JetBrainsMonoNL-Regular.ttf" \
         -w /app/docs/images \
         ghcr.io/charmbracelet/vhs "/app/screenshots/${name}.tape" 2>&1 | \
         grep -E "(Error|error|failed)" && return 1 || true
