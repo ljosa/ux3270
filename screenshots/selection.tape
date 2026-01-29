@@ -1,7 +1,7 @@
 Output selection_temp.gif
 Set Shell bash
 Set Width 830
-Set Height 384
+Set Height 528
 Set FontFamily "JetBrains Mono NL"
 Set FontSize 16
 Set Padding 0
