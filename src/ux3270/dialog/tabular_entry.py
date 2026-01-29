@@ -3,6 +3,7 @@
 from typing import List, Dict, Any, Optional, Callable
 
 from ux3270.panel import Screen, Field, FieldType, Colors
+from ux3270.dialog.layout import shrink_widths_to_fit
 
 
 class Column:
@@ -136,9 +137,28 @@ class TabularEntry:
             return text[:max_width]
         return text[:max_width - 1] + ">"
 
+    def _calculate_widths(self, available_width: int) -> List[int]:
+        """Calculate column widths, shrinking to fit within available width."""
+        if not self.columns:
+            return []
+
+        # Use explicit column widths as natural widths
+        widths = [col.width for col in self.columns]
+
+        # Fixed width = indent(2) + gaps(2 per gap between columns)
+        num_cols = len(widths)
+        separator_width = 2 * (num_cols - 1) if num_cols > 1 else 0
+        fixed_width = 2 + separator_width
+
+        # Minimum width: header name length or 5, whichever is smaller
+        min_widths = [min(len(col.name), 5) for col in self.columns]
+
+        return shrink_widths_to_fit(widths, min_widths, fixed_width, available_width)
+
     def _build_screen(self, page: int, page_size: int, height: int, width: int) -> Screen:
         """Build a Screen with all text and fields for the current page."""
         screen = Screen()
+        col_widths = self._calculate_widths(width)
 
         # Layout constants
         title_row = 0
@@ -158,16 +178,16 @@ class TabularEntry:
 
         # Column headers
         header_parts = []
-        for col in self.columns:
+        for col, col_width in zip(self.columns, col_widths):
             if col.editable and col.required:
-                header_parts.append(self._truncate(f"*{col.name}", col.width).ljust(col.width))
+                header_parts.append(self._truncate(f"*{col.name}", col_width).ljust(col_width))
             else:
-                header_parts.append(self._truncate(col.name, col.width).ljust(col.width))
+                header_parts.append(self._truncate(col.name, col_width).ljust(col_width))
         header_text = "  ".join(header_parts)
         screen.add_text(header_row, 2, header_text, Colors.INTENSIFIED)
 
         # Separator (dashes under each column)
-        sep_parts = ["-" * col.width for col in self.columns]
+        sep_parts = ["-" * w for w in col_widths]
         sep_text = "  ".join(sep_parts)
         screen.add_text(header_row + 1, 2, sep_text, Colors.PROTECTED)
 
@@ -181,13 +201,14 @@ class TabularEntry:
 
             col_pos = 2
             for col_idx, col in enumerate(self.columns):
+                col_width = col_widths[col_idx]
                 if col.editable:
                     # Add Field for editable cell
                     current_val = self.values[row_idx].get(col.name, "")
                     field = Field(
                         row=screen_row,
                         col=col_pos,
-                        length=col.width,
+                        length=col_width,
                         field_type=col.field_type,
                         label=f"{col.name}_{row_idx}",
                         default=current_val,
@@ -197,10 +218,10 @@ class TabularEntry:
                     screen.add_field(field)
                 else:
                     # Static text
-                    val = self._truncate(str(row.get(col.name, "")), col.width).ljust(col.width)
+                    val = self._truncate(str(row.get(col.name, "")), col_width).ljust(col_width)
                     screen.add_text(screen_row, col_pos, val, Colors.PROTECTED)
 
-                col_pos += col.width + 2  # width + 2 spaces
+                col_pos += col_width + 2
 
         # Error line
         if self.error_message:

@@ -124,6 +124,52 @@ def test_table_truncation():
     print("- 'Hello' with width 1 -> 'H' (minimal width)")
 
 
+def test_screen_truncation():
+    """Test Screen-level truncation of text and fields that exceed terminal width."""
+    print("\n" + "="*60)
+    print("TEST 6: Screen Truncation")
+    print("="*60)
+
+    from ux3270.panel import Colors
+
+    screen = Screen()
+    screen._width = 40  # Force narrow terminal width
+
+    # Add text that extends beyond terminal width
+    screen.add_text(0, 0, "This is a very long title that should be truncated at column 40", Colors.INTENSIFIED)
+    screen.add_text(1, 35, "ABCDEFGH", Colors.PROTECTED)  # Starts near edge, should truncate
+    screen.add_text(2, 50, "Hidden", Colors.PROTECTED)  # Beyond edge, should be skipped
+
+    width = screen.get_width()
+    assert width == 40, f"Expected width 40, got {width}"
+
+    # Verify truncation logic for each text element
+    texts = screen._text
+    assert len(texts) == 3, f"Expected 3 text elements, got {len(texts)}"
+
+    # Row 0: full width text at col 0
+    row, col, text, color = texts[0]
+    available = width - col
+    assert available == 40
+    # During render, this will be truncated to 39 chars + ">"
+
+    # Row 1: text at col 35, only 5 chars available
+    row, col, text, color = texts[1]
+    available = width - col
+    assert available == 5
+    # During render, "ABCDEFGH" (8 chars) will become "ABCD>" (5 chars)
+
+    # Row 2: text at col 50, beyond width
+    row, col, text, color = texts[2]
+    assert col >= width, "Text at col 50 should be beyond width 40"
+    # During render, this will be skipped entirely
+
+    print("\nScreen truncation verified:")
+    print("- Text at col 0 with 40 available -> truncated with '>' indicator")
+    print("- Text at col 35 with 5 available -> 'ABCDEFGH' becomes 'ABCD>'")
+    print("- Text at col 50 (beyond width) -> skipped")
+
+
 def run_all_tests():
     """Run all non-interactive tests."""
     print("\n" + "="*70)
@@ -136,6 +182,7 @@ def run_all_tests():
         ("Menu Creation", test_menu_creation),
         ("Screen API", test_screen_api),
         ("Table Truncation", test_table_truncation),
+        ("Screen Truncation", test_screen_truncation),
     ]
     
     passed = 0

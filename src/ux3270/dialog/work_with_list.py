@@ -3,6 +3,7 @@
 from typing import List, Dict, Any, Optional, Callable, Literal
 
 from ux3270.panel import Screen, Colors, Field, FieldType
+from ux3270.dialog.layout import shrink_widths_to_fit
 
 
 class ListColumn:
@@ -90,35 +91,13 @@ class WorkWithList:
                 if col.name in row and col.width is None:
                     widths[i] = max(widths[i], len(str(row[col.name])))
 
-        # Check if we need to shrink to fit
-        # Total = indent(2) + Opt(3) + gap(2) + sum(widths) + gaps(2 per col)
+        # Fixed width = indent(2) + Opt(3) + gaps(2 per col)
         num_cols = len(widths)
-        opt_width = 3  # "Opt" column
-        separator_width = 2 * num_cols  # 2 spaces before each data column
-        indent = 2
-        total_width = indent + opt_width + separator_width + sum(widths)
+        fixed_width = 2 + 3 + (2 * num_cols)
 
-        if total_width > available_width and num_cols > 0:
-            excess = total_width - available_width
+        min_widths = [min(len(col.name), 5) for col in self._columns]
 
-            # Shrink longest columns first
-            min_widths = [min(len(col.name), 5) for col in self._columns]
-
-            while excess > 0:
-                max_width = 0
-                max_idx = -1
-                for i, w in enumerate(widths):
-                    if w > min_widths[i] and w > max_width:
-                        max_width = w
-                        max_idx = i
-
-                if max_idx < 0:
-                    break
-
-                widths[max_idx] -= 1
-                excess -= 1
-
-        return widths
+        return shrink_widths_to_fit(widths, min_widths, fixed_width, available_width)
 
     def _truncate(self, text: str, max_width: int) -> str:
         """Truncate text to fit width, adding '>' indicator if truncated."""

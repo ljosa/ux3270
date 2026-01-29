@@ -111,34 +111,54 @@ class Screen:
         """Move cursor to specified position (0-indexed)."""
         print(f"\033[{row + 1};{col + 1}H", end="", flush=True)
 
+    def _truncate(self, text: str, max_width: int) -> str:
+        """Truncate text to fit within max_width, adding '>' indicator if truncated."""
+        if len(text) <= max_width:
+            return text
+        if max_width <= 1:
+            return text[:max_width]
+        return text[:max_width - 1] + ">"
+
     def _render_field(self, field: Field):
         """Render a single field with its current value and underscores."""
-        self._move_cursor(field.row, field.col)
+        width = self.get_width()
+        if field.col >= width:
+            return
 
+        self._move_cursor(field.row, field.col)
+        available = width - field.col
+
+        # Build the display: value (or masked) followed by underscore placeholders
         if field.field_type == FieldType.READONLY:
-            print(f"{Colors.DEFAULT}{field.value}{Colors.RESET}", end="", flush=True)
-        elif field.field_type == FieldType.PASSWORD:
-            display = "*" * len(field.value)
-            remaining = field.length - len(field.value)
-            print(f"{Colors.INPUT}{display}{Colors.RESET}", end="", flush=True)
-            if remaining > 0:
-                print(f"{Colors.DIM}{'_' * remaining}{Colors.RESET}", end="", flush=True)
+            display = self._truncate(field.value, available)
+            print(f"{Colors.DEFAULT}{display}{Colors.RESET}", end="", flush=True)
         else:
-            remaining = field.length - len(field.value)
-            print(f"{Colors.INPUT}{field.value}{Colors.RESET}", end="", flush=True)
-            if remaining > 0:
-                print(f"{Colors.DIM}{'_' * remaining}{Colors.RESET}", end="", flush=True)
+            value = "*" * len(field.value) if field.field_type == FieldType.PASSWORD else field.value
+            underscores = "_" * (field.length - len(field.value))
+            full_display = value + underscores
+            truncated = self._truncate(full_display, available)
+
+            # Split back into value and underscore portions for correct coloring
+            value_len = min(len(value), len(truncated))
+            value_part = truncated[:value_len]
+            underscore_part = truncated[value_len:]
+
+            print(f"{Colors.INPUT}{value_part}{Colors.RESET}", end="", flush=True)
+            if underscore_part:
+                print(f"{Colors.DIM}{underscore_part}{Colors.RESET}", end="", flush=True)
 
     def render(self):
         """Render the entire screen (text and fields)."""
         self._clear()
+        width = self.get_width()
 
-        # Render all text
         for row, col, text, color in self._text:
+            if col >= width:
+                continue
             self._move_cursor(row, col)
-            print(f"{color}{text}{Colors.RESET}", end="", flush=True)
+            truncated = self._truncate(text, width - col)
+            print(f"{color}{truncated}{Colors.RESET}", end="", flush=True)
 
-        # Render all fields
         for field in self.fields:
             self._render_field(field)
 

@@ -3,6 +3,7 @@
 from typing import List, Optional, Literal, Dict, Any
 
 from ux3270.panel import Screen, Field, FieldType, Colors
+from ux3270.dialog.layout import shrink_widths_to_fit
 
 
 class TableColumn:
@@ -134,37 +135,15 @@ class Table:
                 if i < len(widths) and self._columns[i].width is None:
                     widths[i] = max(widths[i], len(str(val)))
 
-        # Check if we need to shrink to fit
-        # Total width = indent(2) + sum(widths) + separators(2 per gap)
+        # Fixed width = indent(2) + separators(2 per gap)
         num_cols = len(widths)
         separator_width = 2 * (num_cols - 1) if num_cols > 1 else 0
-        indent = 2
-        total_width = indent + sum(widths) + separator_width
+        fixed_width = 2 + separator_width
 
-        if total_width > available_width and num_cols > 0:
-            excess = total_width - available_width
+        # Minimum column width: header name length or 5, whichever is smaller
+        min_widths = [min(len(col.name), 5) for col in self._columns]
 
-            # Shrink longest columns first until it fits
-            # Minimum column width: header name length or 5, whichever is smaller
-            min_widths = [min(len(col.name), 5) for col in self._columns]
-
-            while excess > 0:
-                # Find the longest column that can still be shrunk
-                max_width = 0
-                max_idx = -1
-                for i, w in enumerate(widths):
-                    if w > min_widths[i] and w > max_width:
-                        max_width = w
-                        max_idx = i
-
-                if max_idx < 0:
-                    break  # Can't shrink any more
-
-                # Shrink the longest column by 1
-                widths[max_idx] -= 1
-                excess -= 1
-
-        return widths
+        return shrink_widths_to_fit(widths, min_widths, fixed_width, available_width)
 
     def _get_terminal_size(self) -> tuple:
         """Get terminal dimensions."""
