@@ -31,6 +31,9 @@ wheels/
 *.swo
 *~
 
+# macOS
+.DS_Store
+
 # Testing
 .pytest_cache/
 .coverage
