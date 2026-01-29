@@ -47,3 +47,12 @@ ENV/
 
 # Demo output
 demo_output.txt
+
+# macOS
+.DS_Store
+
+# MkDocs
+site/
+
+# Screenshots temp files
+*_temp.gif

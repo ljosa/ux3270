@@ -1,0 +1,57 @@
+name: Docs
+
+on:
+  # Allow manual trigger for testing
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to deploy (e.g., 0.1.0 or dev)'
+        required: true
+        default: 'dev'
+      set_latest:
+        description: 'Set as latest alias'
+        required: true
+        default: 'false'
+        type: choice
+        options:
+          - 'true'
+          - 'false'
+
+env:
+  PYTHON_VERSION: '3.12'
+
+jobs:
+  deploy-docs:
+    name: Deploy Documentation
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Needed for mike to access gh-pages branch
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install dependencies
+        run: |
+          pip install mkdocs-material mkdocstrings[python] mike
+
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Deploy docs with mike
+        run: |
+          VERSION="${{ github.event.inputs.version }}"
+          echo "Deploying docs for version: $VERSION"
+          if [ "${{ github.event.inputs.set_latest }}" = "true" ]; then
+            mike deploy --push --update-aliases $VERSION latest
+          else
+            mike deploy --push $VERSION
+          fi
