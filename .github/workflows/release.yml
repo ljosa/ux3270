@@ -73,4 +73,10 @@ jobs:
           # Extract version from tag (v0.1.0 -> 0.1.0)
           VERSION=${GITHUB_REF#refs/tags/v}
           echo "Deploying docs for version: $VERSION"
+
+          # Fetch gh-pages if it exists
+          git fetch origin gh-pages:gh-pages || true
+
+          # Deploy with mike and set as default (creates redirect at root)
           mike deploy --push --update-aliases $VERSION latest
+          mike set-default --push latest

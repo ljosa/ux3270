@@ -51,8 +51,13 @@ jobs:
         run: |
           VERSION="${{ github.event.inputs.version }}"
           echo "Deploying docs for version: $VERSION"
+
+          # Fetch gh-pages if it exists
+          git fetch origin gh-pages:gh-pages || true
+
           if [ "${{ github.event.inputs.set_latest }}" = "true" ]; then
             mike deploy --push --update-aliases $VERSION latest
+            mike set-default --push latest
           else
             mike deploy --push $VERSION
           fi
