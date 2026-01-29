@@ -57,6 +57,7 @@ jobs:
 
       - name: Install dependencies
         run: |
+          pip install -e .  # Install package for mkdocstrings
           pip install mkdocs-material mkdocstrings[python] mike
 
       - name: Configure git
