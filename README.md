@@ -2,6 +2,8 @@
 
 IBM 3270-like terminal UI library for Python.
 
+**[Documentation](https://ljosa.github.io/ux3270/)** | **[PyPI](https://pypi.org/project/ux3270/)**
+
 ## Overview
 
 Create terminal applications with an IBM 3270-style interaction model: display a form, let the user fill it in, continue when they submit.
@@ -10,10 +12,10 @@ Create terminal applications with an IBM 3270-style interaction model: display a
 
 The inventory management demo app showcases the library's capabilities:
 
-| Main Menu | Inventory List | Update Form |
-|:---------:|:--------------:|:-----------:|
-| ![Main Menu](docs/images/screenshot1.png) | ![Inventory List](docs/images/screenshot2.png) | ![Update Form](docs/images/screenshot3.png) |
-| Menu with single-key selection | Table with F7/F8 pagination | Form with required fields and F4=Prompt |
+| Main Menu | Inventory List | Data Entry Form |
+|:---------:|:--------------:|:---------------:|
+| ![Main Menu](docs/images/menu.png) | ![Inventory List](docs/images/worklist.png) | ![Form](docs/images/form.png) |
+| Menu with single-key selection | Work-with list with action codes | Form with field validation |
 
 ## Installation
 
@@ -161,6 +163,54 @@ The library uses IBM 3270 color conventions:
 - Python 3.10+
 - Unix-like system (Linux, macOS)
 - Terminal with ANSI support
+
+## Development
+
+### Building and Viewing Documentation Locally
+
+```bash
+uv run mkdocs serve
+```
+
+Then open http://127.0.0.1:8000 in your browser. The site auto-reloads on changes.
+
+### Regenerating Screenshots
+
+Screenshots require Docker with [VHS](https://github.com/charmbracelet/vhs):
+
+```bash
+./screenshots/generate.sh
+```
+
+### Cutting a Release
+
+The version number must be updated in two places that must match:
+
+1. **`pyproject.toml`**: The `version` field (e.g., `version = "0.2.0"`)
+2. **Git tag**: Must be `v` + version (e.g., `v0.2.0`)
+
+Release process:
+
+```bash
+# 1. Update version in pyproject.toml
+#    Edit: version = "0.2.0"
+
+# 2. Commit the version bump
+git add pyproject.toml
+git commit -m "Bump version to 0.2.0"
+
+# 3. Create and push tag (triggers release workflow)
+git tag v0.2.0
+git push origin main --tags
+```
+
+The GitHub Actions workflow will automatically:
+- Build and publish the package to PyPI
+- Deploy versioned documentation to GitHub Pages
+
+### Documentation Versions
+
+Documentation is versioned using [mike](https://github.com/jimporter/mike). Each release gets its own version, with `latest` always pointing to the most recent release. Users can switch versions using the dropdown in the docs.
 
 ## License
 
