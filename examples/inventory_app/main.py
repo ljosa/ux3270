@@ -121,7 +121,7 @@ class InventoryApp:
                       help_text="Stock Keeping Unit - unique identifier for this item (e.g., ELEC-001)")
         form.add_field("Name", length=40, required=True,
                       help_text="Descriptive name for the item")
-        form.add_field("Description", length=60,
+        form.add_field("Description", length=58,
                       help_text="Optional detailed description of the item")
         form.add_field("Quantity", length=10, field_type=FieldType.NUMERIC, default="0",
                       help_text="Current stock quantity (numeric only)")
@@ -535,18 +535,19 @@ class InventoryApp:
             panel_id="INV006",
             instruction="Enter actual counted quantities. Leave blank to skip."
         )
-        te.add_column("SKU", width=12)
+        te.add_column("SKU", width=8)
         te.add_column("Name", width=25)
         te.add_column("Location", width=15)
-        te.add_column("System Qty", width=10)
-        te.add_column("Actual Qty", width=10, editable=True, field_type=FieldType.NUMERIC)
+        te.add_column("Expected", width=8)
+        te.add_column("Actual", width=8, editable=True, field_type=FieldType.NUMERIC)
 
         for item in items:
             te.add_row(
                 SKU=item["sku"],
                 Name=item["name"][:25],
                 Location=item["location"][:15],
-                **{"System Qty": str(item["quantity"]), "Actual Qty": ""}
+                Expected=str(item["quantity"]),
+                Actual=""
             )
 
         result = te.show()
@@ -556,7 +557,7 @@ class InventoryApp:
         # Update quantities for items where actual qty was entered
         updated = 0
         for i, row in enumerate(result):
-            actual_qty = row.get("Actual Qty", "").strip()
+            actual_qty = row.get("Actual", "").strip()
             if actual_qty:
                 try:
                     new_qty = int(actual_qty)
