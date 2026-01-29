@@ -1,0 +1,54 @@
+site_name: ux3270
+site_description: IBM 3270-style terminal UI library for Python
+site_url: https://ljosa.github.io/ux3270/
+repo_url: https://github.com/ljosa/ux3270
+repo_name: ljosa/ux3270
+
+theme:
+  name: material
+  palette:
+    - scheme: default
+      primary: teal
+      accent: teal
+  features:
+    - navigation.sections
+    - navigation.expand
+    - content.code.copy
+
+extra:
+  version:
+    provider: mike
+
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          options:
+            show_source: false
+            show_root_heading: true
+            heading_level: 2
+            members_order: source
+
+markdown_extensions:
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.superfences
+  - admonition
+  - pymdownx.details
+
+nav:
+  - Home: index.md
+  - Getting Started: getting-started.md
+  - Components:
+    - Form: components/form.md
+    - Menu: components/menu.md
+    - Table: components/table.md
+    - Work-with List: components/work-with-list.md
+    - Selection List: components/selection-list.md
+    - Tabular Entry: components/tabular-entry.md
+    - Message Panel: components/message.md
+  - API Reference:
+    - Dialog Layer: api/dialog.md
+    - Panel Layer: api/panel.md
+  - Keyboard Controls: keyboard.md
