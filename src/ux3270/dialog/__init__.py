@@ -5,6 +5,8 @@ This module provides pre-built dialog patterns:
 - Menu: Selection menu with single-key navigation
 - Form: Data entry form with automatic field layout
 - Table: Tabular data display with pagination
+- TabularEntry: Table with editable columns for multi-row data entry
+- WorkWithList: List with action codes for editing/deleting records
 - SelectionList: F4=Prompt selection list for field lookups
 - MessagePanel: Information/error message display
 """
@@ -12,7 +14,9 @@ This module provides pre-built dialog patterns:
 from .menu import Menu
 from .form import Form
 from .table import Table
+from .tabular_entry import TabularEntry
+from .work_with_list import WorkWithList
 from .selection_list import SelectionList
 from .message import MessagePanel, show_message
 
-__all__ = ["Menu", "Form", "Table", "SelectionList", "MessagePanel", "show_message"]
+__all__ = ["Menu", "Form", "Table", "TabularEntry", "WorkWithList", "SelectionList", "MessagePanel", "show_message"]

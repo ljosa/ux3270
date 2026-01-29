@@ -19,14 +19,19 @@ def test_table_display():
     print("TEST 1: Table Display")
     print("="*60)
     
-    table = Table("SAMPLE DATA TABLE", ["ID", "Name", "Value", "Status"])
+    table = Table("SAMPLE DATA TABLE")
+    table.add_column("ID")
+    table.add_column("Name")
+    table.add_column("Value", align="right")
+    table.add_column("Status")
     table.add_row("001", "Item One", "$10.00", "Active")
     table.add_row("002", "Item Two", "$25.50", "Pending")
     table.add_row("003", "Item Three", "$99.99", "Active")
     
     print("\nTable created with 3 rows and 4 columns")
-    print("Table should display with IBM 3270-style borders")
-    return True
+    print("Table should display with IBM 3270-style layout")
+    assert len(table.rows) == 3
+    assert len(table._columns) == 4
 
 
 def test_form_creation():
@@ -47,7 +52,7 @@ def test_form_creation():
     print("- Email (required)")
     print("- Age (numeric)")
     print("- Password (hidden, required)")
-    return True
+    assert len(form._fields) == 4
 
 
 def test_menu_creation():
@@ -62,9 +67,9 @@ def test_menu_creation():
     menu.add_item("3", "Option Three", lambda: print("Option 3"))
     
     print("\nMenu created with 3 items")
-    print("Menu should have IBM 3270-style box borders")
+    print("Menu uses IBM 3270-style layout")
     print("Items: 1, 2, 3 with single-key selection")
-    return True
+    assert len(menu.items) == 3
 
 
 def test_screen_api():
@@ -72,19 +77,51 @@ def test_screen_api():
     print("\n" + "="*60)
     print("TEST 4: Low-Level Screen API")
     print("="*60)
-    
-    screen = Screen("LOGIN SCREEN")
-    screen.add_text(2, 2, "Welcome to the System")
+
+    from ux3270.panel import Colors
+
+    screen = Screen()
+    # Add title using add_text
+    screen.add_text(0, 30, "LOGIN SCREEN", Colors.INTENSIFIED)
+    screen.add_text(2, 2, "Welcome to the System", Colors.PROTECTED)
+    screen.add_text(4, 2, "Username . .", Colors.PROTECTED)
+    screen.add_text(6, 2, "Password . .", Colors.PROTECTED)
     screen.add_field(Field(row=4, col=15, length=20, label="Username", required=True))
-    screen.add_field(Field(row=6, col=15, length=20, label="Password", 
+    screen.add_field(Field(row=6, col=15, length=20, label="Password",
                           field_type=FieldType.PASSWORD, required=True))
-    
+
     print("\nScreen created with:")
-    print("- Title: LOGIN SCREEN")
+    print("- Title: LOGIN SCREEN (via add_text)")
     print("- Static text at row 2, col 2")
     print("- 2 fields: Username and Password")
     print("- Password field will display asterisks")
-    return True
+    assert len(screen.fields) == 2
+    assert len(screen._text) == 4
+
+
+def test_table_truncation():
+    """Test auto-truncation of wide content."""
+    print("\n" + "="*60)
+    print("TEST 5: Table Truncation")
+    print("="*60)
+
+    table = Table("TRUNCATION TEST")
+    table.add_column("ID", width=5)
+    table.add_column("Description")
+    table.add_row("001", "Short")
+    table.add_row("002", "This is a very long description that exceeds normal width")
+
+    # Test the truncation method
+    assert table._truncate("Hello", 10) == "Hello"
+    assert table._truncate("Hello World", 10) == "Hello Wor>"
+    assert table._truncate("Hi", 2) == "Hi"
+    assert table._truncate("Hello", 1) == "H"
+
+    print("\nTruncation tests:")
+    print("- 'Hello' with width 10 -> 'Hello' (no truncation)")
+    print("- 'Hello World' with width 10 -> 'Hello Wor>' (truncated)")
+    print("- 'Hi' with width 2 -> 'Hi' (exact fit)")
+    print("- 'Hello' with width 1 -> 'H' (minimal width)")
 
 
 def run_all_tests():
@@ -98,6 +135,7 @@ def run_all_tests():
         ("Form Creation", test_form_creation),
         ("Menu Creation", test_menu_creation),
         ("Screen API", test_screen_api),
+        ("Table Truncation", test_table_truncation),
     ]
     
     passed = 0
@@ -105,12 +143,9 @@ def run_all_tests():
     
     for test_name, test_func in tests:
         try:
-            if test_func():
-                passed += 1
-                print(f"\n✓ {test_name} - PASSED")
-            else:
-                failed += 1
-                print(f"\n✗ {test_name} - FAILED")
+            test_func()
+            passed += 1
+            print(f"\n✓ {test_name} - PASSED")
         except Exception as e:
             failed += 1
             print(f"\n✗ {test_name} - ERROR: {e}")

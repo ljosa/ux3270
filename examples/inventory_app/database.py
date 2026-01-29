@@ -45,7 +45,7 @@ class InventoryDB:
         quantity: int = 0,
         unit_price: float = 0.0,
         location: str = ""
-    ) -> int:
+    ) -> Optional[int]:
         """
         Add a new item to inventory.
         
@@ -71,12 +71,12 @@ class InventoryDB:
     def update_item(
         self,
         item_id: int,
-        sku: str = None,
-        name: str = None,
-        description: str = None,
-        quantity: int = None,
-        unit_price: float = None,
-        location: str = None
+        sku: Optional[str] = None,
+        name: Optional[str] = None,
+        description: Optional[str] = None,
+        quantity: Optional[int] = None,
+        unit_price: Optional[float] = None,
+        location: Optional[str] = None
     ) -> bool:
         """
         Update an existing item.

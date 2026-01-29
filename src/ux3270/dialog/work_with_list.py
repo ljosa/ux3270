@@ -1,92 +1,58 @@
-"""Table display component for IBM 3270-style applications."""
+"""Work-with list component for IBM 3270-style applications."""
 
-from typing import List, Optional, Literal, Dict, Any
+from typing import List, Dict, Any, Optional, Callable, Literal
 
-from ux3270.panel import Screen, Field, FieldType, Colors
+from ux3270.panel import Screen, Colors, Field, FieldType
 
 
-class TableColumn:
-    """Represents a column definition in a table."""
+class ListColumn:
+    """Represents a column definition in a work-with list."""
 
     def __init__(self, name: str, width: Optional[int] = None,
                  align: Literal["left", "right"] = "left"):
-        """
-        Initialize a column.
-
-        Args:
-            name: Column name (used as header)
-            width: Display width (None = auto-calculate from content)
-            align: Text alignment ("left" or "right")
-        """
         self.name = name
         self.width = width
         self.align = align
 
 
-class Table:
+class WorkWithList:
     """
-    IBM 3270-style table/list display with pagination.
+    IBM 3270-style work-with list with action codes.
 
-    Displays tabular data with column headers following CUA conventions:
-    - Panel ID at top-left, title centered
-    - Optional header fields (e.g., "Position to" filter)
-    - Column headers in intensified text
-    - Data rows in default (green) color
-    - Row count/pagination info on message line
-    - F7/F8 for page up/down (CUA standard)
-    - Function keys at bottom
+    Displays a list of records with an Opt input field per row.
+    Users type action codes (2=Change, 4=Delete, etc.) and press Enter
+    to process actions.
 
     The dialog builds a Screen definition and hands control to Screen
     for all rendering and input handling.
     """
 
-    def __init__(self, title: str = "", panel_id: str = "", instruction: str = ""):
-        """
-        Initialize a table.
+    # Opt field width (2 chars, standard for AS/400)
+    OPT_FIELD_LENGTH = 2
 
-        Args:
-            title: Table title (displayed in uppercase per IBM convention)
-            panel_id: Optional panel identifier (shown at top-left per CUA)
-            instruction: Optional instruction text
-        """
+    def __init__(self, title: str = "", panel_id: str = "", instruction: str = ""):
         self.title = title.upper() if title else ""
         self.panel_id = panel_id.upper() if panel_id else ""
-        self.instruction = instruction
-        self._columns: List[TableColumn] = []
-        self.rows: List[List[str]] = []
-        self._header_fields: List[Dict[str, Any]] = []
-        self.current_row = 0  # First visible row index
+        self.instruction = instruction or "Type option, press Enter."
+        self._columns: List[ListColumn] = []
+        self.rows: List[Dict[str, Any]] = []
+        self.actions: Dict[str, str] = {}  # code -> description
+        self.add_callback: Optional[Callable] = None
+        self.current_page = 0  # Current page for pagination
+        self.current_row = 0  # Starting row position (used to calculate initial page)
+        self._header_fields: List[Dict[str, Any]] = []  # Header field definitions
 
     def add_column(self, name: str, width: Optional[int] = None,
-                   align: Literal["left", "right"] = "left") -> "Table":
-        """
-        Add a column definition.
+                   align: Literal["left", "right"] = "left") -> "WorkWithList":
+        self._columns.append(ListColumn(name, width, align))
+        return self
 
-        Args:
-            name: Column name (used as header)
-            width: Display width (None = auto-calculate from content)
-            align: Text alignment ("left" or "right")
-
-        Returns:
-            Self for method chaining
-        """
-        self._columns.append(TableColumn(name, width, align))
+    def add_action(self, code: str, description: str) -> "WorkWithList":
+        self.actions[code] = description
         return self
 
     def add_header_field(self, label: str, length: int = 10, default: str = "",
-                         field_type: FieldType = FieldType.TEXT) -> "Table":
-        """
-        Add a header field (e.g., "Position to" filter).
-
-        Args:
-            label: Field label
-            length: Field length
-            default: Default value
-            field_type: Field type
-
-        Returns:
-            Self for method chaining
-        """
+                         field_type: FieldType = FieldType.TEXT) -> "WorkWithList":
         self._header_fields.append({
             "label": label,
             "length": length,
@@ -97,27 +63,18 @@ class Table:
         return self
 
     def get_header_values(self) -> Dict[str, str]:
-        """Get current header field values."""
         return {f["label"]: f["value"] for f in self._header_fields}
 
-    def add_row(self, *values) -> "Table":
-        """
-        Add a row to the table.
+    def set_add_callback(self, callback: Callable) -> "WorkWithList":
+        self.add_callback = callback
+        return self
 
-        Args:
-            values: Column values for the row
-
-        Returns:
-            Self for method chaining
-        """
-        self.rows.append(list(values))
+    def add_row(self, **values) -> "WorkWithList":
+        self.rows.append(values)
         return self
 
     def _calculate_widths(self, available_width: int) -> List[int]:
-        """Calculate column widths based on content, fitting within available width.
-
-        Short columns are preserved; long columns are truncated to fit.
-        """
+        """Calculate column widths, fitting within available width."""
         if not self._columns:
             return []
 
@@ -128,28 +85,26 @@ class Table:
                 widths.append(col.width)
             else:
                 widths.append(len(col.name))
-
         for row in self.rows:
-            for i, val in enumerate(row):
-                if i < len(widths) and self._columns[i].width is None:
-                    widths[i] = max(widths[i], len(str(val)))
+            for i, col in enumerate(self._columns):
+                if col.name in row and col.width is None:
+                    widths[i] = max(widths[i], len(str(row[col.name])))
 
         # Check if we need to shrink to fit
-        # Total width = indent(2) + sum(widths) + separators(2 per gap)
+        # Total = indent(2) + Opt(3) + gap(2) + sum(widths) + gaps(2 per col)
         num_cols = len(widths)
-        separator_width = 2 * (num_cols - 1) if num_cols > 1 else 0
+        opt_width = 3  # "Opt" column
+        separator_width = 2 * num_cols  # 2 spaces before each data column
         indent = 2
-        total_width = indent + sum(widths) + separator_width
+        total_width = indent + opt_width + separator_width + sum(widths)
 
         if total_width > available_width and num_cols > 0:
             excess = total_width - available_width
 
-            # Shrink longest columns first until it fits
-            # Minimum column width: header name length or 5, whichever is smaller
+            # Shrink longest columns first
             min_widths = [min(len(col.name), 5) for col in self._columns]
 
             while excess > 0:
-                # Find the longest column that can still be shrunk
                 max_width = 0
                 max_idx = -1
                 for i, w in enumerate(widths):
@@ -158,22 +113,12 @@ class Table:
                         max_idx = i
 
                 if max_idx < 0:
-                    break  # Can't shrink any more
+                    break
 
-                # Shrink the longest column by 1
                 widths[max_idx] -= 1
                 excess -= 1
 
         return widths
-
-    def _get_terminal_size(self) -> tuple:
-        """Get terminal dimensions."""
-        try:
-            import os
-            size = os.get_terminal_size()
-            return size.lines, size.columns
-        except Exception:
-            return 24, 80
 
     def _truncate(self, text: str, max_width: int) -> str:
         """Truncate text to fit width, adding '>' indicator if truncated."""
@@ -182,6 +127,14 @@ class Table:
         if max_width <= 1:
             return text[:max_width]
         return text[:max_width - 1] + ">"
+
+    def _get_terminal_size(self) -> tuple:
+        try:
+            import os
+            size = os.get_terminal_size()
+            return size.lines, size.columns
+        except Exception:
+            return 24, 80
 
     def _build_screen(self, page: int, page_size: int, height: int, width: int) -> Screen:
         """Build a Screen with all text and fields for the current page."""
@@ -193,7 +146,8 @@ class Table:
         title_row = 0
         instruction_row = 1
         header_fields_start = 3
-        column_headers_row = 3 + header_rows + (1 if header_rows else 0)
+        actions_row = 3 + header_rows + (1 if header_rows else 0)
+        column_headers_row = actions_row + 2
         data_start_row = column_headers_row + 2
 
         # Title
@@ -204,14 +158,14 @@ class Table:
             screen.add_text(title_row, title_col, self.title, Colors.INTENSIFIED)
 
         # Instruction
-        if self.instruction:
-            screen.add_text(instruction_row, 0, self.instruction, Colors.PROTECTED)
+        screen.add_text(instruction_row, 0, self.instruction, Colors.PROTECTED)
 
         # Header fields - align all input fields at the same column
         if self._header_fields:
             # Find the longest label to calculate field column
             max_label_len = max(len(hf["label"]) for hf in self._header_fields)
             # Label format: "Label . . ." with dots padding to align
+            # Minimum dots is 3, add more to align longer labels
             field_col = 2 + max_label_len + 7  # 2 indent + label + " . . . " (7 chars)
 
             for i, hf in enumerate(self._header_fields):
@@ -235,42 +189,52 @@ class Table:
                                  default=hf["value"])
                     screen.add_field(field)
 
+        # Action codes legend
+        if self.actions:
+            legend_parts = [f"{code}={desc}" for code, desc in self.actions.items()]
+            screen.add_text(actions_row, 2, "  ".join(legend_parts), Colors.PROTECTED)
+
         # Column headers
-        if self._columns:
-            header_parts = []
-            for i, col in enumerate(self._columns):
-                w = col_widths[i] if i < len(col_widths) else len(col.name)
-                name = self._truncate(col.name, w)
-                if col.align == "right":
-                    header_parts.append(name.rjust(w))
-                else:
-                    header_parts.append(name.ljust(w))
-            header_text = "  ".join(header_parts)
-            screen.add_text(column_headers_row, 2, header_text, Colors.INTENSIFIED)
+        header_text = "Opt"
+        for i, col in enumerate(self._columns):
+            w = col_widths[i] if i < len(col_widths) else len(col.name)
+            name = self._truncate(col.name, w)
+            if col.align == "right":
+                header_text += "  " + name.rjust(w)
+            else:
+                header_text += "  " + name.ljust(w)
+        screen.add_text(column_headers_row, 2, header_text, Colors.INTENSIFIED)
 
-            # Separator line (dashes under each column)
-            sep_parts = ["-" * w for w in col_widths]
-            sep_text = "  ".join(sep_parts)
-            screen.add_text(column_headers_row + 1, 2, sep_text, Colors.PROTECTED)
+        # Separator (dashes under each column)
+        sep = "---"  # Opt column
+        for w in col_widths:
+            sep += "  " + "-" * w
+        screen.add_text(column_headers_row + 1, 2, sep, Colors.PROTECTED)
 
-        # Data rows
+        # Data rows with Opt fields
         start_row_idx = page * page_size
         end_row_idx = min(start_row_idx + page_size, len(self.rows))
         visible_rows = self.rows[start_row_idx:end_row_idx]
 
         for i, data_row in enumerate(visible_rows):
             screen_row = data_start_row + i
-            row_parts = []
-            for j, val in enumerate(data_row):
-                w = col_widths[j] if j < len(col_widths) else len(str(val))
-                col = self._columns[j] if j < len(self._columns) else None
-                text = self._truncate(str(val), w)
-                if col and col.align == "right":
-                    row_parts.append(text.rjust(w))
+
+            # Opt input field
+            opt_field = Field(row=screen_row, col=2, length=self.OPT_FIELD_LENGTH,
+                             label=f"opt_{start_row_idx + i}")
+            screen.add_field(opt_field)
+
+            # Data columns (as text)
+            col_pos = 2 + 3 + 2  # After Opt field + spacing
+            for j, col in enumerate(self._columns):
+                w = col_widths[j] if j < len(col_widths) else 10
+                val = self._truncate(str(data_row.get(col.name, "")), w)
+                if col.align == "right":
+                    display_val = val.rjust(w)
                 else:
-                    row_parts.append(text.ljust(w))
-            row_text = "  ".join(row_parts)
-            screen.add_text(screen_row, 2, row_text, Colors.DEFAULT)
+                    display_val = val.ljust(w)
+                screen.add_text(screen_row, col_pos, display_val, Colors.DEFAULT)
+                col_pos += w + 2
 
         # Row count message
         if self.rows:
@@ -284,7 +248,9 @@ class Table:
         screen.add_text(height - 2, 0, "-" * width, Colors.DIM)
 
         # Function keys
-        fkeys = ["F3=Return"]
+        fkeys = ["F3=Exit"]
+        if self.add_callback:
+            fkeys.append("F6=Add")
         if len(self.rows) > page_size:
             if page > 0:
                 fkeys.append("F7=Up")
@@ -294,21 +260,25 @@ class Table:
 
         return screen
 
-    def show(self) -> Optional[Dict[str, str]]:
+    def show(self) -> Optional[List[Dict[str, Any]]]:
         """
-        Display the table with pagination and wait for user input.
+        Display the work-with list and handle user input.
 
         Returns:
-            Dictionary of header field values, or None if no header fields.
+            List of actions: [{"action": "2", "row": {...}}, ...]
+            Empty list if no actions selected.
+            None if cancelled (F3).
         """
-        height, width = self._get_terminal_size()
+        if not self.rows:
+            return []
 
+        height, width = self._get_terminal_size()
         # Calculate page size based on available space
         header_rows = len(self._header_fields)
-        chrome_lines = 3 + header_rows + (1 if header_rows else 0) + 4 + 3
+        chrome_lines = 3 + header_rows + (1 if header_rows else 0) + 4 + 3  # title, instr, headers, actions, footer
         page_size = max(1, height - chrome_lines)
 
-        # Calculate initial page from current_row
+        # Calculate initial page from current_row position
         page = self.current_row // page_size if page_size > 0 else 0
 
         while True:
@@ -316,7 +286,7 @@ class Table:
             result = screen.show()
 
             if result is None:
-                return self.get_header_values() if self._header_fields else None
+                return None
 
             aid = result["aid"]
             fields = result["fields"]
@@ -326,8 +296,12 @@ class Table:
                 if hf["label"] in fields:
                     hf["value"] = fields[hf["label"]]
 
-            if aid == "F3" or aid == "ENTER":
-                return self.get_header_values() if self._header_fields else None
+            if aid == "F3":
+                return None
+
+            elif aid == "F6" and self.add_callback:
+                self.add_callback()
+                return []  # Signal refresh
 
             elif aid == "F7" or aid == "PGUP":
                 if page > 0:
@@ -337,3 +311,26 @@ class Table:
                 start_idx = page * page_size
                 if start_idx + page_size < len(self.rows):
                     page += 1
+
+            elif aid == "ENTER":
+                # Check for actions in Opt fields
+                results = []
+                for key, value in fields.items():
+                    if key.startswith("opt_") and value:
+                        row_idx = int(key.split("_")[1])
+                        if value.upper() in self.actions and row_idx < len(self.rows):
+                            results.append({
+                                "action": value.upper(),
+                                "row": self.rows[row_idx]
+                            })
+                if results:
+                    return results
+                # No actions - return empty (caller can check header values)
+                return []
+
+        return []
+
+    # Backwards compatibility
+    @property
+    def header_fields(self) -> List[Dict[str, Any]]:
+        return self._header_fields

@@ -3,9 +3,10 @@
 
 import argparse
 import random
+from typing import Optional
 
 from ux3270.panel import FieldType
-from ux3270.dialog import Menu, Form, Table, SelectionList, show_message
+from ux3270.dialog import Menu, Form, Table, TabularEntry, WorkWithList, SelectionList, show_message
 from .database import InventoryDB
 
 
@@ -71,11 +72,12 @@ class InventoryApp:
         menu.add_item("4", "Update Item", self.update_item)
         menu.add_item("5", "Delete Item", self.delete_item)
         menu.add_item("6", "Adjust Quantity", self.adjust_quantity)
+        menu.add_item("7", "Stock Take", self.stock_take)
 
         menu.run()
         self.db.close()
 
-    def _select_item(self) -> str:
+    def _select_item(self) -> Optional[str]:
         """
         Show item selection list for F4=Prompt.
 
@@ -88,10 +90,14 @@ class InventoryApp:
 
         selection = SelectionList(
             "SELECT ITEM",
-            columns=["ID", "SKU", "Name", "Qty", "Location"],
             panel_id="INV099",
             instruction="Type S to select, Enter to confirm, F3 to cancel"
         )
+        selection.add_column("ID")
+        selection.add_column("SKU")
+        selection.add_column("Name")
+        selection.add_column("Qty", align="right")
+        selection.add_column("Location")
 
         for item in items:
             selection.add_row(
@@ -110,8 +116,7 @@ class InventoryApp:
     def add_item(self):
         """Add a new item to inventory."""
         form = Form("ADD NEW ITEM", panel_id="INV001",
-                   help_text="Enter new item details. Required fields marked with *.",
-                   )
+                   help_text="Enter new item details. Required fields marked with *.")
         form.add_field("SKU", length=20, required=True,
                       help_text="Stock Keeping Unit - unique identifier for this item (e.g., ELEC-001)")
         form.add_field("Name", length=40, required=True,
@@ -148,28 +153,161 @@ class InventoryApp:
         except Exception as e:
             show_message(f"ERROR: {e}", "error")
 
-    def view_items(self):
-        """View all items in inventory."""
-        items = self.db.list_items()
-
-        if not items:
-            show_message("NO ITEMS IN INVENTORY", "warning")
+    def _display_item(self, item_id: int):
+        """Display item details (read-only)."""
+        item = self.db.get_item(item_id)
+        if not item:
+            show_message(f"ITEM NOT FOUND: {item_id}", "error")
             return
 
-        table = Table("INVENTORY LIST", ["ID", "SKU", "Name", "Qty", "Price", "Location"],
-                     panel_id="INV010")
+        form = Form("DISPLAY ITEM", panel_id="INV012",
+                   help_text="Item details (read-only). Press F3 to return.")
+        form.add_field("ID", length=10, field_type=FieldType.READONLY,
+                      default=str(item["id"]))
+        form.add_field("SKU", length=20, field_type=FieldType.READONLY,
+                      default=item["sku"])
+        form.add_field("Name", length=40, field_type=FieldType.READONLY,
+                      default=item["name"])
+        form.add_field("Description", length=60, field_type=FieldType.READONLY,
+                      default=item["description"])
+        form.add_field("Quantity", length=10, field_type=FieldType.READONLY,
+                      default=str(item["quantity"]))
+        form.add_field("Unit Price", length=10, field_type=FieldType.READONLY,
+                      default=f"${item['unit_price']:.2f}")
+        form.add_field("Location", length=30, field_type=FieldType.READONLY,
+                      default=item["location"])
+        form.show()
 
-        for item in items:
-            table.add_row(
+    def _edit_item(self, item_id: int):
+        """Edit an item directly by ID."""
+        item = self.db.get_item(item_id)
+        if not item:
+            show_message(f"ITEM NOT FOUND: {item_id}", "error")
+            return
+
+        update_form = Form("UPDATE ITEM", panel_id="INV003",
+                          help_text="Modify item details. Press Enter to save, F3 to cancel.")
+        update_form.add_field("SKU", length=20, default=item["sku"], required=True,
+                             help_text="Stock Keeping Unit - must be unique")
+        update_form.add_field("Name", length=40, default=item["name"], required=True,
+                             help_text="Descriptive name for the item")
+        update_form.add_field("Description", length=60, default=item["description"],
+                             help_text="Optional detailed description")
+        update_form.add_field("Quantity", length=10, field_type=FieldType.NUMERIC,
+                            default=str(item["quantity"]),
+                            help_text="Current stock quantity")
+        update_form.add_field("Unit Price", length=10, default=str(item["unit_price"]),
+                             help_text="Price per unit")
+        update_form.add_field("Location", length=30, default=item["location"],
+                             help_text="Storage location")
+
+        result = update_form.show()
+        if result is None:
+            return
+
+        try:
+            self.db.update_item(
                 item["id"],
-                item["sku"],
-                item["name"][:30],  # Truncate long names
-                item["quantity"],
-                f"${item['unit_price']:.2f}",
-                item["location"][:20]  # Truncate long locations
+                sku=result["SKU"],
+                name=result["Name"],
+                description=result.get("Description", ""),
+                quantity=int(result.get("Quantity", "0") or "0"),
+                unit_price=float(result.get("Unit Price", "0.0") or "0.0"),
+                location=result.get("Location", "")
             )
+            show_message("ITEM UPDATED", "success")
+        except Exception as e:
+            show_message(f"ERROR: {e}", "error")
 
-        table.show()
+    def _delete_item(self, item_id: int):
+        """Delete an item directly by ID."""
+        item = self.db.get_item(item_id)
+        if not item:
+            show_message(f"ITEM NOT FOUND: {item_id}", "error")
+            return
+
+        confirm_form = Form("CONFIRM DELETE", panel_id="INV004",
+                           help_text="Confirm deletion. This action cannot be undone.")
+        confirm_form.add_text(f"Item: {item['sku']} - {item['name']}")
+        confirm_form.add_field("Delete? (Y/N)", length=1, required=True,
+                              help_text="Enter Y to confirm deletion, N to cancel")
+
+        confirm = confirm_form.show()
+        if confirm is None:
+            return
+
+        if confirm["Delete? (Y/N)"].upper() == "Y":
+            if self.db.delete_item(item["id"]):
+                show_message("ITEM DELETED", "success")
+            else:
+                show_message("DELETE FAILED", "error")
+
+    def view_items(self):
+        """View all items in inventory with work-with actions."""
+        position_to = ""  # Track position value across refreshes
+        while True:
+            items = self.db.list_items()
+
+            if not items:
+                show_message("NO ITEMS IN INVENTORY", "warning")
+                return
+
+            # Find starting position if position_to is set
+            start_index = 0
+            if position_to:
+                for i, item in enumerate(items):
+                    if item["sku"].upper() >= position_to.upper():
+                        start_index = i
+                        break
+
+            wwl = WorkWithList(
+                "WORK WITH INVENTORY",
+                panel_id="INV010",
+                instruction="Type action code, press Enter to process."
+            )
+            wwl.add_column("SKU")
+            wwl.add_column("Name")
+            wwl.add_column("Qty", align="right")
+            wwl.add_column("Price", align="right")
+            wwl.add_column("Location")
+            wwl.add_header_field("Position to", length=15, default=position_to)
+            wwl.add_action("2", "Change")
+            wwl.add_action("4", "Delete")
+            wwl.add_action("5", "Display")
+            wwl.set_add_callback(self.add_item)
+
+            for item in items:
+                wwl.add_row(
+                    id=item["id"],
+                    SKU=item["sku"],
+                    Name=item["name"][:25],
+                    Qty=str(item["quantity"]),
+                    Price=f"${item['unit_price']:.2f}",
+                    Location=item["location"][:15]
+                )
+
+            # Set initial scroll position
+            wwl.current_row = start_index
+
+            result = wwl.show()
+            # Update position value from header field
+            position_to = wwl.get_header_values().get("Position to", "")
+
+            if result is None:
+                return  # User pressed F3
+
+            # Process actions
+            for action_item in result:
+                action = action_item["action"]
+                row = action_item["row"]
+                item_id = row["id"]
+
+                if action == "2":
+                    self._edit_item(item_id)
+                elif action == "4":
+                    self._delete_item(item_id)
+                elif action == "5":
+                    self._display_item(item_id)
 
     def search_items(self):
         """Search for items."""
@@ -191,8 +329,13 @@ class InventoryApp:
             return
 
         table = Table(f"SEARCH RESULTS: {search_term.upper()}",
-                     ["ID", "SKU", "Name", "Qty", "Price", "Location"],
                      panel_id="INV011")
+        table.add_column("ID")
+        table.add_column("SKU")
+        table.add_column("Name")
+        table.add_column("Qty", align="right")
+        table.add_column("Price", align="right")
+        table.add_column("Location")
 
         for item in items:
             table.add_row(
@@ -378,6 +521,56 @@ class InventoryApp:
             show_message(f"QUANTITY UPDATED: {item['quantity']} -> {new_qty}", "success")
         except Exception as e:
             show_message(f"ERROR: {e}", "error")
+
+    def stock_take(self):
+        """Perform stock take - bulk quantity entry for physical inventory count."""
+        items = self.db.list_items()
+
+        if not items:
+            show_message("NO ITEMS IN INVENTORY", "warning")
+            return
+
+        te = TabularEntry(
+            "STOCK TAKE",
+            panel_id="INV006",
+            instruction="Enter actual counted quantities. Leave blank to skip."
+        )
+        te.add_column("SKU", width=12)
+        te.add_column("Name", width=25)
+        te.add_column("Location", width=15)
+        te.add_column("System Qty", width=10)
+        te.add_column("Actual Qty", width=10, editable=True, field_type=FieldType.NUMERIC)
+
+        for item in items:
+            te.add_row(
+                SKU=item["sku"],
+                Name=item["name"][:25],
+                Location=item["location"][:15],
+                **{"System Qty": str(item["quantity"]), "Actual Qty": ""}
+            )
+
+        result = te.show()
+        if result is None:
+            return  # User cancelled
+
+        # Update quantities for items where actual qty was entered
+        updated = 0
+        for i, row in enumerate(result):
+            actual_qty = row.get("Actual Qty", "").strip()
+            if actual_qty:
+                try:
+                    new_qty = int(actual_qty)
+                    item = items[i]
+                    if new_qty != item["quantity"]:
+                        self.db.update_item(item["id"], quantity=new_qty)
+                        updated += 1
+                except ValueError:
+                    pass  # Skip invalid entries
+
+        if updated > 0:
+            show_message(f"STOCK TAKE COMPLETE - {updated} ITEM(S) UPDATED", "success")
+        else:
+            show_message("NO CHANGES MADE", "info")
 
 
 def load_sample_data(db: InventoryDB) -> int:

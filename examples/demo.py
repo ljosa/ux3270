@@ -9,8 +9,19 @@ def example_low_level():
     """Example using low-level ux3270 API."""
     print("\n=== Low-Level API Example ===\n")
 
-    screen = Screen("USER REGISTRATION")
-    screen.add_text(2, 2, "Please enter your information:")
+    from ux3270.panel import Colors
+
+    screen = Screen()
+    # Add title
+    screen.add_text(0, 30, "USER REGISTRATION", Colors.INTENSIFIED)
+    # Add instruction
+    screen.add_text(2, 2, "Please enter your information:", Colors.PROTECTED)
+    # Add field labels
+    screen.add_text(4, 2, "Full Name . . .", Colors.PROTECTED)
+    screen.add_text(6, 2, "Email . . . . .", Colors.PROTECTED)
+    screen.add_text(8, 2, "Age . . . . . .", Colors.PROTECTED)
+    screen.add_text(10, 2, "Password . . .", Colors.PROTECTED)
+    # Add fields
     screen.add_field(Field(row=4, col=20, length=30, label="Full Name", required=True))
     screen.add_field(Field(row=6, col=20, length=30, label="Email", required=True))
     screen.add_field(Field(row=8, col=20, length=10, label="Age", field_type=FieldType.NUMERIC))
@@ -18,13 +29,14 @@ def example_low_level():
                           field_type=FieldType.PASSWORD, required=True))
 
     result = screen.show()
-    if result is None:
+    if result is None or result["aid"] == "F3":
         return  # User cancelled with F3
 
+    fields = result["fields"]
     print(f"\nRegistration complete!")
-    print(f"Name: {result['Full Name']}")
-    print(f"Email: {result['Email']}")
-    print(f"Age: {result['Age']}")
+    print(f"Name: {fields['Full Name']}")
+    print(f"Email: {fields['Email']}")
+    print(f"Age: {fields['Age']}")
     input("\nPress Enter to continue...")
 
 
@@ -52,7 +64,11 @@ def example_table():
     """Example using Table display."""
     print("\n=== Table Display Example ===\n")
 
-    table = Table("EMPLOYEE LIST", ["ID", "Name", "Department", "Status"])
+    table = Table("EMPLOYEE LIST")
+    table.add_column("ID")
+    table.add_column("Name")
+    table.add_column("Department")
+    table.add_column("Status")
     table.add_row("001", "Alice Johnson", "Engineering", "Active")
     table.add_row("002", "Bob Smith", "Marketing", "Active")
     table.add_row("003", "Carol Davis", "Sales", "On Leave")
