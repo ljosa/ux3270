@@ -195,25 +195,29 @@ class WorkWithList:
         end_row_idx = min(start_row_idx + page_size, len(self.rows))
         visible_rows = self.rows[start_row_idx:end_row_idx]
 
-        for i, data_row in enumerate(visible_rows):
-            screen_row = data_start_row + i
+        if not visible_rows:
+            # Show "No items found" message when list is empty
+            screen.add_text(data_start_row, 2, "No items found.", Colors.PROTECTED)
+        else:
+            for i, data_row in enumerate(visible_rows):
+                screen_row = data_start_row + i
 
-            # Opt input field
-            opt_field = Field(row=screen_row, col=2, length=self.OPT_FIELD_LENGTH,
-                             label=f"opt_{start_row_idx + i}")
-            screen.add_field(opt_field)
+                # Opt input field
+                opt_field = Field(row=screen_row, col=2, length=self.OPT_FIELD_LENGTH,
+                                 label=f"opt_{start_row_idx + i}")
+                screen.add_field(opt_field)
 
-            # Data columns (as text)
-            col_pos = 2 + 3 + 2  # After Opt field + spacing
-            for j, col in enumerate(self._columns):
-                w = col_widths[j] if j < len(col_widths) else 10
-                val = self._truncate(str(data_row.get(col.name, "")), w)
-                if col.align == "right":
-                    display_val = val.rjust(w)
-                else:
-                    display_val = val.ljust(w)
-                screen.add_text(screen_row, col_pos, display_val, Colors.DEFAULT)
-                col_pos += w + 2
+                # Data columns (as text)
+                col_pos = 2 + 3 + 2  # After Opt field + spacing
+                for j, col in enumerate(self._columns):
+                    w = col_widths[j] if j < len(col_widths) else 10
+                    val = self._truncate(str(data_row.get(col.name, "")), w)
+                    if col.align == "right":
+                        display_val = val.rjust(w)
+                    else:
+                        display_val = val.ljust(w)
+                    screen.add_text(screen_row, col_pos, display_val, Colors.DEFAULT)
+                    col_pos += w + 2
 
         # Row count message
         if self.rows:
@@ -248,7 +252,7 @@ class WorkWithList:
             Empty list if no actions selected.
             None if cancelled (F3).
         """
-        if not self.rows:
+        if not self.rows and not self.add_callback:
             return []
 
         height, width = self._get_terminal_size()
