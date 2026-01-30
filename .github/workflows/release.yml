@@ -30,16 +30,8 @@ jobs:
       - name: Build package
         run: python -m build
 
-      - name: Publish to TestPyPI
+      - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
-        with:
-          repository-url: https://test.pypi.org/legacy/
-          attestations: false  # TestPyPI doesn't fully support attestations
-          skip-existing: true  # Don't fail if version already exists
-          # To publish to real PyPI instead:
-          # 1. Remove the repository-url line above
-          # 2. Remove attestations: false (PyPI supports attestations)
-          # 3. Set up trusted publishing at pypi.org for this repo
 
   deploy-docs:
     name: Deploy Documentation
