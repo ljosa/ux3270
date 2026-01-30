@@ -14,7 +14,7 @@ The inventory management demo app showcases the library's capabilities:
 
 | Main Menu | Inventory List | Data Entry Form |
 |:---------:|:--------------:|:---------------:|
-| ![Main Menu](docs/images/menu.png) | ![Inventory List](docs/images/worklist.png) | ![Form](docs/images/form.png) |
+| ![Main Menu](https://raw.githubusercontent.com/ljosa/ux3270/main/docs/images/menu.png) | ![Inventory List](https://raw.githubusercontent.com/ljosa/ux3270/main/docs/images/worklist.png) | ![Form](https://raw.githubusercontent.com/ljosa/ux3270/main/docs/images/form.png) |
 | Menu with single-key selection | Work-with list with action codes | Form with field validation |
 
 ## Installation
