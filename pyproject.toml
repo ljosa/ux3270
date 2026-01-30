@@ -12,10 +12,13 @@ license = "MIT"
 authors = [
     {name = "Vebjorn Ljosa"}
 ]
+keywords = ["terminal", "tui", "3270", "ibm", "forms", "cli"]
 classifiers = [
-    "Development Status :: 3 - Alpha",
+    "Development Status :: 5 - Production/Stable",
+    "Environment :: Console",
     "Intended Audience :: Developers",
     "License :: OSI Approved :: MIT License",
+    "Operating System :: POSIX",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
