@@ -19,10 +19,14 @@ The inventory management demo app showcases the library's capabilities:
 
 ## Installation
 
-As a dependency in your project:
+```bash
+pip install ux3270
+```
+
+Or with uv:
 
 ```bash
-uv add git+https://github.com/ljosa/ux3270.git
+uv add ux3270
 ```
 
 For development of ux3270 itself:
