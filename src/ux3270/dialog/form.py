@@ -1,5 +1,6 @@
 """Form UI component for IBM 3270-style applications."""
 
+import copy
 from typing import Dict, Any, Optional, Callable, List, NamedTuple
 
 from ux3270.panel import Screen, Field, FieldType, Colors
@@ -59,6 +60,7 @@ class Form:
         self._field_help: Dict[str, str] = {}  # label -> help_text
         self._static_text: List[_StaticText] = []
         self._field_label_rows: List[_FieldLabel] = []
+        self._items: List[_FormItem] = []
         self.current_row = self.BODY_START_ROW
         self.label_col = 2
         self.field_col = 20
@@ -114,6 +116,7 @@ class Form:
             prompt=prompt
         )
         self._fields.append(field)
+        self._items.append(_FormItem("field", len(self._fields) - 1))
         if help_text:
             self._field_help[label] = help_text
         self.current_row += 2  # Add spacing between fields
@@ -130,6 +133,7 @@ class Form:
             Self for method chaining
         """
         self._static_text.append(_StaticText(self.current_row, self.label_col, text))
+        self._items.append(_FormItem("text", len(self._static_text) - 1))
         self.current_row += 2
         return self
 
@@ -142,8 +146,8 @@ class Form:
         except Exception:
             return 24, 80
 
-    def _build_screen(self, height: int, width: int) -> Screen:
-        """Build a Screen with all text and fields."""
+    def _build_screen(self, page: int, page_size: int, height: int, width: int) -> Screen:
+        """Build a Screen with all text and fields for the current page."""
         screen = Screen()
 
         # Title row
@@ -157,7 +161,7 @@ class Form:
         if self.instruction:
             screen.add_text(1, 0, self.instruction, Colors.PROTECTED)
 
-        # Compute field_col from longest label,
+        # Compute field_col from ALL field labels (consistent across pages),
         # clamped so fields retain at least MIN_FIELD_WIDTH visible columns.
         if self._field_label_rows:
             max_label_len = max(len(label) for _, label in self._field_label_rows)
@@ -166,25 +170,35 @@ class Form:
         else:
             field_col = self.field_col
 
-        # Render field labels with dot leaders (dots at fixed columns for alignment)
-        for row, label in self._field_label_rows:
-            gap_start = self.label_col + len(label)
-            leader = "".join(
-                "." if c != gap_start and c != field_col - 1
-                and c % 2 == field_col % 2
-                else " "
-                for c in range(gap_start, field_col)
-            )
-            screen.add_text(row, self.label_col, label + leader, Colors.PROTECTED)
+        # Slice items for the current page
+        start = page * page_size
+        end = min(start + page_size, len(self._items))
+        visible_items = self._items[start:end]
 
-        # Static text (add_text items)
-        for row, col, text in self._static_text:
-            screen.add_text(row, col, text, Colors.PROTECTED)
-
-        # Fields — set computed col
-        for field in self._fields:
-            field.col = field_col
-            screen.add_field(field)
+        # Render visible items, remapping rows starting at BODY_START_ROW
+        screen_row = self.BODY_START_ROW
+        for item_type, idx in visible_items:
+            if item_type == "field":
+                field = self._fields[idx]
+                _, label = self._field_label_rows[idx]
+                # Render label with dot leader
+                gap_start = self.label_col + len(label)
+                leader = "".join(
+                    "." if c != gap_start and c != field_col - 1
+                    and c % 2 == field_col % 2
+                    else " "
+                    for c in range(gap_start, field_col)
+                )
+                screen.add_text(screen_row, self.label_col, label + leader, Colors.PROTECTED)
+                # Copy the field so we don't mutate the Form's canonical list
+                screen_field = copy.copy(field)
+                screen_field.row = screen_row
+                screen_field.col = field_col
+                screen.add_field(screen_field)
+            else:
+                _, col, text = self._static_text[idx]
+                screen.add_text(screen_row, col, text, Colors.PROTECTED)
+            screen_row += 2
 
         # Footer separator
         screen.add_text(height - 2, 0, "-" * width, Colors.DIM)
@@ -197,6 +211,12 @@ class Form:
         # Show F4=Prompt if any field has a prompt callback
         if any(f.prompt for f in self._fields):
             fkeys_list.append("F4=Prompt")
+        # Pagination keys
+        if len(self._items) > page_size:
+            if page > 0:
+                fkeys_list.append("F7=Up")
+            if end < len(self._items):
+                fkeys_list.append("F8=Down")
         screen.add_text(height - 1, 0, "  ".join(fkeys_list), Colors.PROTECTED)
 
         return screen
@@ -239,6 +259,18 @@ class Form:
 
         help_screen.show()
 
+    _FOOTER_LINES = 2  # separator + fkeys
+
+    def _page_size(self, height: int) -> int:
+        """Compute how many items fit on one page (each item is 2 rows)."""
+        return max(1, (height - self.BODY_START_ROW - self._FOOTER_LINES) // 2)
+
+    def _restore_field_values(self, fields: Dict[str, Any]):
+        """Restore field values from a result dict."""
+        for field in self._fields:
+            if field.label in fields:
+                field.value = fields[field.label]
+
     def show(self) -> Optional[Dict[str, Any]]:
         """
         Display the form and return field values.
@@ -247,9 +279,11 @@ class Form:
             Dictionary of field values, or None if cancelled (F3)
         """
         height, width = self._get_terminal_size()
+        page_size = self._page_size(height)
+        page = 0
 
         while True:
-            screen = self._build_screen(height, width)
+            screen = self._build_screen(page, page_size, height, width)
             result = screen.show()
 
             if result is None:
@@ -258,25 +292,18 @@ class Form:
             if result["aid"] == "F3":
                 return None
 
+            # Restore field values from the visible page before any action.
+            # This MUST run before every page transition so edits on the
+            # current page are preserved when the user navigates away.
+            self._restore_field_values(result["fields"])
+
             if result["aid"] == "F1":
-                # Show help and return to form
-                # Get current field from result if available
                 current_field = result.get("current_field", "")
                 self._show_help(current_field, height, width)
-                # Restore field values for next iteration
-                for field in self._fields:
-                    if field.label in result["fields"]:
-                        field.value = result["fields"][field.label]
                 continue
 
             if result["aid"] == "F4":
-                # F4=Prompt - call the prompt callback for the current field
                 current_field_label = result.get("current_field", "")
-                # Restore field values first
-                for field in self._fields:
-                    if field.label in result["fields"]:
-                        field.value = result["fields"][field.label]
-                # Find the field and call its prompt
                 for field in self._fields:
                     if field.label == current_field_label and field.prompt:
                         prompt_result = field.prompt()
@@ -285,5 +312,15 @@ class Form:
                         break
                 continue
 
-            # Return just the field values for backwards compatibility
-            return result["fields"]
+            if result["aid"] in ("F7", "PGUP"):
+                if page > 0:
+                    page -= 1
+                continue
+
+            if result["aid"] in ("F8", "PGDN"):
+                if (page + 1) * page_size < len(self._items):
+                    page += 1
+                continue
+
+            # Enter: return values from ALL fields (not just visible page)
+            return {field.label: field.value for field in self._fields}

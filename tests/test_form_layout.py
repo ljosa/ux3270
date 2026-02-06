@@ -3,9 +3,11 @@
 from ux3270.dialog import Form
 
 
-def _build(form, width=80):
+def _build(form, width=80, height=24, page=0, page_size=None):
     """Build a screen from a form and return it."""
-    return form._build_screen(24, width)
+    if page_size is None:
+        page_size = form._page_size(height)
+    return form._build_screen(page, page_size, height, width)
 
 
 def _field_cols(screen):
@@ -22,12 +24,17 @@ def _get_label_text(screen, row, col):
 
 
 def _get_leader(form, screen, field_index):
-    """Extract the leader portion for the Nth field."""
-    row, label = form._field_label_rows[field_index]
-    text = _get_label_text(screen, row, form.label_col)
-    assert text is not None, f"No text at row {row}"
-    assert text.startswith(label)
-    return text[len(label):]
+    """Extract the leader portion for the Nth field.
+
+    Finds the field's label text on the screen by scanning for rows that
+    start with the label, since pagination remaps row positions.
+    """
+    _, label = form._field_label_rows[field_index]
+    # Find rendered row containing this label
+    for r, c, text, _color in screen._text:
+        if c == form.label_col and text.startswith(label):
+            return text[len(label):]
+    assert False, f"No label text found for field {field_index} ({label!r})"
 
 
 class TestFieldColComputation:
@@ -166,9 +173,9 @@ class TestDotLeaders:
 
         field_col = screen.fields[0].col
         for i in range(len(form._field_label_rows)):
-            row, label = form._field_label_rows[i]
-            text = _get_label_text(screen, row, form.label_col)
-            assert form.label_col + len(text) == field_col
+            leader = _get_leader(form, screen, i)
+            _, label = form._field_label_rows[i]
+            assert form.label_col + len(label) + len(leader) == field_col
 
     def test_even_gap_ends_with_space(self):
         # gap = 20 - 2 - 4 = 14 (even)
@@ -216,3 +223,121 @@ class TestFieldLabelRows:
             (form.BODY_START_ROW, "First"),
             (form.BODY_START_ROW + 2, "Second"),
         ]
+
+
+def _get_fkeys_text(screen):
+    """Return the function keys text from the last row of the screen."""
+    # Function keys are on the last row (height - 1)
+    for r, c, text, _color in screen._text:
+        if c == 0 and ("F3=" in text or "F7=" in text or "F8=" in text):
+            return text
+    return ""
+
+
+def _visible_labels(screen, label_col=2):
+    """Return the list of field labels visible on the screen."""
+    labels = []
+    for f in screen.fields:
+        labels.append(f.label)
+    return labels
+
+
+
+class TestPagination:
+    def test_all_fields_fit_no_pagination(self):
+        """Form with 2 fields on a 24-line terminal — no F7/F8 in function keys."""
+        form = Form("T")
+        form.add_field("Name", length=10)
+        form.add_field("Age", length=3)
+        screen = _build(form, height=24)
+        fkeys = _get_fkeys_text(screen)
+        assert "F7=" not in fkeys
+        assert "F8=" not in fkeys
+
+    def test_fields_overflow_shows_pagination_keys(self):
+        """Form with 20 fields on a 24-line terminal — F8=Down in function keys."""
+        form = Form("T")
+        for i in range(20):
+            form.add_field(f"Field {i}", length=10)
+        # page_size = (24 - 5) // 2 = 9
+        screen = _build(form, height=24, page=0)
+        fkeys = _get_fkeys_text(screen)
+        assert "F8=Down" in fkeys
+        assert "F7=" not in fkeys  # First page: no Up
+
+    def test_page_shows_correct_fields(self):
+        """Build page 0 and page 1, verify correct field labels on each."""
+        form = Form("T")
+        for i in range(20):
+            form.add_field(f"Field {i}", length=10)
+        page_size = form._page_size(24)  # 9
+
+        screen0 = _build(form, height=24, page=0, page_size=page_size)
+        labels0 = _visible_labels(screen0)
+        assert labels0 == [f"Field {i}" for i in range(page_size)]
+
+        screen1 = _build(form, height=24, page=1, page_size=page_size)
+        labels1 = _visible_labels(screen1)
+        assert labels1 == [f"Field {i}" for i in range(page_size, 2 * page_size)]
+
+    def test_page_size_calculation(self):
+        """Verify page_size computation from terminal height."""
+        form = Form("T")
+        # Chrome = 5 lines; each item = 2 rows
+        chrome = form.BODY_START_ROW + form._FOOTER_LINES
+        assert form._page_size(24) == (24 - chrome) // 2  # 9
+        assert form._page_size(10) == (10 - chrome) // 2  # 2
+        assert form._page_size(6) == 1  # minimum
+
+    def test_field_col_consistent_across_pages(self):
+        """field_col is the same on page 0 and page 1."""
+        form = Form("T")
+        # Add a long-labeled field first and short ones after
+        form.add_field("Very Long Label Here", length=10)
+        for i in range(19):
+            form.add_field(f"F{i}", length=10)
+        page_size = form._page_size(24)
+
+        screen0 = _build(form, height=24, page=0, page_size=page_size)
+        screen1 = _build(form, height=24, page=1, page_size=page_size)
+
+        cols0 = set(_field_cols(screen0))
+        cols1 = set(_field_cols(screen1))
+        assert len(cols0) == 1
+        assert cols0 == cols1
+
+    def test_static_text_paginates_with_fields(self):
+        """A form with interleaved add_text and add_field paginates correctly."""
+        form = Form("T")
+        form.add_text("Section 1")
+        form.add_field("Name", length=10)
+        form.add_text("Section 2")
+        form.add_field("Age", length=3)
+        # 4 items total; force page_size=2 so they span 2 pages
+        screen0 = _build(form, height=24, page=0, page_size=2)
+        screen1 = _build(form, height=24, page=1, page_size=2)
+
+        # Page 0: "Section 1" text + "Name" field
+        rendered0 = [t for _, _, t, _ in screen0._text]
+        assert any("Section 1" in s for s in rendered0)
+        assert any("Name" in s for s in rendered0)
+        assert not any("Section 2" in s for s in rendered0)
+
+        # Page 1: "Section 2" text + "Age" field
+        rendered1 = [t for _, _, t, _ in screen1._text]
+        assert any("Section 2" in s for s in rendered1)
+        assert any("Age" in s for s in rendered1)
+        assert not any("Section 1" in s for s in rendered1)
+
+    def test_last_page_shows_f7_no_f8(self):
+        """Last page shows F7=Up but not F8=Down."""
+        form = Form("T")
+        for i in range(20):
+            form.add_field(f"Field {i}", length=10)
+        page_size = form._page_size(24)
+        last_page = (len(form._items) - 1) // page_size
+
+        screen = _build(form, height=24, page=last_page, page_size=page_size)
+        fkeys = _get_fkeys_text(screen)
+        assert "F7=Up" in fkeys
+        assert "F8=" not in fkeys
