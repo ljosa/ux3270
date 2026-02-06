@@ -1,8 +1,24 @@
 """Form UI component for IBM 3270-style applications."""
 
-from typing import Dict, Any, Optional, Callable, List
+from typing import Dict, Any, Optional, Callable, List, NamedTuple
 
 from ux3270.panel import Screen, Field, FieldType, Colors
+
+
+class _FieldLabel(NamedTuple):
+    row: int
+    label: str
+
+
+class _StaticText(NamedTuple):
+    row: int
+    col: int
+    text: str
+
+
+class _FormItem(NamedTuple):
+    kind: str  # "field" or "text"
+    index: int
 
 
 class Form:
@@ -41,10 +57,19 @@ class Form:
         self.help_text = help_text
         self._fields: List[Field] = []
         self._field_help: Dict[str, str] = {}  # label -> help_text
-        self._static_text: List[tuple] = []  # (row, col, text)
+        self._static_text: List[_StaticText] = []
+        self._field_label_rows: List[_FieldLabel] = []
         self.current_row = self.BODY_START_ROW
         self.label_col = 2
         self.field_col = 20
+
+    # Minimum gap between the longest label and the field column,
+    # ensuring at least one visible dot in the leader.
+    MIN_LABEL_FIELD_GAP = 4
+
+    # Minimum visible field width; field_col is clamped so that at
+    # least this many columns remain for input on the screen.
+    MIN_FIELD_WIDTH = 10
 
     def add_field(
         self,
@@ -74,12 +99,12 @@ class Form:
         Returns:
             Self for method chaining
         """
-        # Store label position for rendering
-        self._static_text.append((self.current_row, self.label_col, f"{label} . . ."))
+        # Store label info for dynamic layout at render time
+        self._field_label_rows.append(_FieldLabel(self.current_row, label))
 
         field = Field(
             row=self.current_row,
-            col=self.field_col,
+            col=0,  # will be computed in _build_screen
             length=length,
             field_type=field_type,
             label=label,
@@ -104,7 +129,7 @@ class Form:
         Returns:
             Self for method chaining
         """
-        self._static_text.append((self.current_row, self.label_col, text))
+        self._static_text.append(_StaticText(self.current_row, self.label_col, text))
         self.current_row += 2
         return self
 
@@ -132,12 +157,33 @@ class Form:
         if self.instruction:
             screen.add_text(1, 0, self.instruction, Colors.PROTECTED)
 
-        # Static text (labels)
+        # Compute field_col from longest label,
+        # clamped so fields retain at least MIN_FIELD_WIDTH visible columns.
+        if self._field_label_rows:
+            max_label_len = max(len(label) for _, label in self._field_label_rows)
+            field_col = max(self.field_col, self.label_col + max_label_len + self.MIN_LABEL_FIELD_GAP)
+            field_col = min(field_col, width - self.MIN_FIELD_WIDTH)
+        else:
+            field_col = self.field_col
+
+        # Render field labels with dot leaders (dots at fixed columns for alignment)
+        for row, label in self._field_label_rows:
+            gap_start = self.label_col + len(label)
+            leader = "".join(
+                "." if c != gap_start and c != field_col - 1
+                and c % 2 == field_col % 2
+                else " "
+                for c in range(gap_start, field_col)
+            )
+            screen.add_text(row, self.label_col, label + leader, Colors.PROTECTED)
+
+        # Static text (add_text items)
         for row, col, text in self._static_text:
             screen.add_text(row, col, text, Colors.PROTECTED)
 
-        # Fields
+        # Fields — set computed col
         for field in self._fields:
+            field.col = field_col
             screen.add_field(field)
 
         # Footer separator
