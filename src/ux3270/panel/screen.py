@@ -30,6 +30,11 @@ class Screen:
     - Returns when user presses an AID key (Enter, F3, etc.)
     """
 
+    _AID_KEYS = frozenset({
+        'ENTER', 'F1', 'F2', 'F3', 'F4', 'F5', 'F6', 'F7', 'F8',
+        'PGUP', 'PGDN',
+    })
+
     def __init__(self):
         """Initialize an empty screen."""
         self.fields: List[Field] = []
@@ -206,6 +211,9 @@ class Screen:
                     elif seq3 == '1':
                         sys.stdin.read(1)
                         return 'F1'
+                    elif seq3 == '2':
+                        sys.stdin.read(1)
+                        return 'F2'
                     elif seq3 == '3':
                         sys.stdin.read(1)
                         return 'F3'
@@ -291,10 +299,10 @@ class Screen:
                 return "NEXT", cursor_pos
             elif key == 'SHIFT_TAB':
                 return "PREV", cursor_pos
-            elif key == 'ENTER':
-                return "ENTER", cursor_pos
-            elif key in ('F3', 'CTRL_C'):
+            elif key == 'CTRL_C':
                 return "F3", cursor_pos
+            elif key in self._AID_KEYS:
+                return key, cursor_pos
             elif key == 'UP':
                 return "UP", cursor_pos
             elif key == 'DOWN':
@@ -304,26 +312,10 @@ class Screen:
         value = field.value
 
         # AID keys (return control to caller)
-        if key == 'ENTER':
-            return "ENTER", cursor_pos
-        elif key in ('F3', 'CTRL_C'):
+        if key == 'CTRL_C':
             return "F3", cursor_pos
-        elif key == 'F1':
-            return "F1", cursor_pos
-        elif key == 'F4':
-            return "F4", cursor_pos
-        elif key == 'F5':
-            return "F5", cursor_pos
-        elif key == 'F6':
-            return "F6", cursor_pos
-        elif key == 'F7':
-            return "F7", cursor_pos
-        elif key == 'F8':
-            return "F8", cursor_pos
-        elif key == 'PGUP':
-            return "PGUP", cursor_pos
-        elif key == 'PGDN':
-            return "PGDN", cursor_pos
+        elif key in self._AID_KEYS:
+            return key, cursor_pos
 
         # Field navigation
         elif key == 'TAB':
@@ -482,7 +474,7 @@ class Screen:
                 while True:
                     key = self._read_key()
                     # AID keys always return
-                    if key in ('ENTER', 'F3', 'CTRL_C', 'F1', 'F4', 'F5', 'F6', 'F7', 'F8'):
+                    if key == 'CTRL_C' or key in self._AID_KEYS:
                         self._clear()
                         return {"aid": key if key != 'CTRL_C' else 'F3', "fields": {}, "key": key}
                     # In any-key mode, return on printable characters too
@@ -518,7 +510,7 @@ class Screen:
                 action, cursor_pos = self._handle_field_key(field, key, cursor_pos)
 
                 # AID keys - return control to caller
-                if action in ('ENTER', 'F3', 'F1', 'F4', 'F5', 'F6', 'F7', 'F8', 'PGUP', 'PGDN'):
+                if action in self._AID_KEYS:
                     self._clear()
                     fields_dict = {}
                     for f in self.fields:
