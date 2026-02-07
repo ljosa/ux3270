@@ -1,7 +1,8 @@
 """Form UI component for IBM 3270-style applications."""
 
 import copy
-from typing import Dict, Any, Optional, Callable, List, NamedTuple
+import textwrap
+from typing import Dict, Any, Optional, Callable, List, NamedTuple, Tuple
 
 from ux3270.panel import Screen, Field, FieldType, Colors
 
@@ -221,43 +222,92 @@ class Form:
 
         return screen
 
+    @staticmethod
+    def _wrap_lines(text: str, width: int) -> List[str]:
+        """Split text on newlines, then word-wrap each line to width."""
+        lines: List[str] = []
+        for paragraph in text.split('\n'):
+            if not paragraph.strip():
+                lines.append("")
+            else:
+                lines.extend(textwrap.wrap(paragraph, width) or [""])
+        return lines
+
     def _show_help(self, current_field_label: str, height: int, width: int):
-        """Display help screen."""
-        help_screen = Screen()
+        """Display help screen with word-wrapped, paginated content."""
+        margin = 2
+        wrap_width = max(10, width - 2 * margin)
 
-        # Title
-        help_title = "HELP"
-        title_col = max(0, (width - len(help_title)) // 2)
-        help_screen.add_text(0, title_col, help_title, Colors.INTENSIFIED)
-
-        row = 2
+        # Build flat list of (text, col, color) lines
+        lines: List[Tuple[str, int, str]] = []
 
         # Panel-level help
         if self.help_text:
-            help_screen.add_text(row, 2, self.help_text, Colors.PROTECTED)
-            row += 2
+            for line in self._wrap_lines(self.help_text, wrap_width):
+                lines.append((line, margin, Colors.PROTECTED))
+            lines.append(("", margin, Colors.PROTECTED))  # blank separator
 
         # Field-specific help
         field_help = self._field_help.get(current_field_label, "")
         if field_help:
-            help_screen.add_text(row, 2, f"Field: {current_field_label}", Colors.INTENSIFIED)
-            row += 1
-            help_screen.add_text(row, 2, field_help, Colors.PROTECTED)
-            row += 2
+            lines.append((f"Field: {current_field_label}", margin, Colors.INTENSIFIED))
+            for line in self._wrap_lines(field_help, wrap_width):
+                lines.append((line, margin, Colors.PROTECTED))
+            lines.append(("", margin, Colors.PROTECTED))
 
         # List all field help if no specific field help
         if not field_help and self._field_help:
-            help_screen.add_text(row, 2, "Field Help:", Colors.INTENSIFIED)
-            row += 1
+            lines.append(("Field Help:", margin, Colors.INTENSIFIED))
             for label, text in self._field_help.items():
-                help_screen.add_text(row, 4, f"{label}: {text}", Colors.PROTECTED)
-                row += 1
+                lines.append((f"{label}:", margin + 2, Colors.INTENSIFIED))
+                for line in self._wrap_lines(text, wrap_width - 2):
+                    lines.append((line, margin + 2, Colors.PROTECTED))
+                lines.append(("", margin, Colors.PROTECTED))
 
-        # Footer
-        help_screen.add_text(height - 2, 0, "-" * width, Colors.DIM)
-        help_screen.add_text(height - 1, 0, "Press Enter or F3 to return", Colors.PROTECTED)
+        # Chrome: title (row 0) + blank (row 1) = 2 top rows;
+        # separator (height-2) + fkeys (height-1) = 2 bottom rows.
+        _HELP_BODY_START = 2
+        body_rows = max(0, height - _HELP_BODY_START - self._FOOTER_LINES)
+        page = 0
 
-        help_screen.show()
+        while True:
+            help_screen = Screen()
+
+            # Title
+            help_title = "HELP"
+            title_col = max(0, (width - len(help_title)) // 2)
+            help_screen.add_text(0, title_col, help_title, Colors.INTENSIFIED)
+
+            # Body
+            start = page * body_rows
+            end = min(start + body_rows, len(lines))
+            for i, (text, col, color) in enumerate(lines[start:end]):
+                help_screen.add_text(_HELP_BODY_START + i, col, text, color)
+
+            # Footer separator
+            help_screen.add_text(height - 2, 0, "-" * width, Colors.DIM)
+
+            # Footer fkeys
+            fkeys_list = []
+            if len(lines) > body_rows:
+                if page > 0:
+                    fkeys_list.append("F7=Up")
+                if end < len(lines):
+                    fkeys_list.append("F8=Down")
+            fkeys_list.append("Enter or F3=Return")
+            help_screen.add_text(height - 1, 0, "  ".join(fkeys_list), Colors.PROTECTED)
+
+            result = help_screen.show()
+            if result is None:
+                return
+
+            aid = result.get("aid", "")
+            if aid in ("ENTER", "F3"):
+                return
+            if aid in ("F7", "PGUP") and page > 0:
+                page -= 1
+            elif aid in ("F8", "PGDN") and end < len(lines):
+                page += 1
 
     _FOOTER_LINES = 2  # separator + fkeys
 

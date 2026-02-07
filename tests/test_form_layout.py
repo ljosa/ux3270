@@ -225,6 +225,30 @@ class TestFieldLabelRows:
         ]
 
 
+class TestWrapLines:
+    def test_simple_text(self):
+        assert Form._wrap_lines("hello world", 80) == ["hello world"]
+
+    def test_wraps_long_line(self):
+        result = Form._wrap_lines("word " * 20, 20)
+        assert all(len(line) <= 20 for line in result)
+        assert len(result) > 1
+
+    def test_preserves_blank_lines(self):
+        assert Form._wrap_lines("a\n\nb", 80) == ["a", "", "b"]
+
+    def test_empty_string(self):
+        assert Form._wrap_lines("", 80) == [""]
+
+    def test_whitespace_only_paragraph(self):
+        """textwrap.wrap returns [] for whitespace-only; _wrap_lines yields ''."""
+        assert Form._wrap_lines("   ", 80) == [""]
+
+    def test_multiple_paragraphs(self):
+        result = Form._wrap_lines("first\nsecond\nthird", 80)
+        assert result == ["first", "second", "third"]
+
+
 def _get_fkeys_text(screen):
     """Return the function keys text from the last row of the screen."""
     # Function keys are on the last row (height - 1)
