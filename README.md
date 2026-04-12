@@ -53,7 +53,9 @@ if result:
 
 # Form with F4=Prompt lookup
 def select_dept():
-    sel = SelectionList("SELECT DEPARTMENT", ["Code", "Name"])
+    sel = SelectionList("SELECT DEPARTMENT")
+    sel.add_column("Code")
+    sel.add_column("Name")
     sel.add_row(Code="ENG", Name="Engineering")
     sel.add_row(Code="SAL", Name="Sales")
     selected = sel.show()
@@ -64,7 +66,10 @@ form.add_field("Department", prompt=select_dept)  # F4 shows list
 result = form.show()
 
 # Work-with list (action codes per row)
-wwl = WorkWithList("WORK WITH ITEMS", ["ID", "Name", "Status"])
+wwl = WorkWithList("WORK WITH ITEMS")
+wwl.add_column("ID")
+wwl.add_column("Name")
+wwl.add_column("Status")
 wwl.add_action("2", "Change")
 wwl.add_action("4", "Delete")
 wwl.add_action("5", "Display")
@@ -83,7 +88,10 @@ menu.add_item("2", "Option 2", lambda: print("Selected 2"))
 menu.run()  # Runs until user exits with F3 or X
 
 # Display a table (with pagination)
-table = Table("RESULTS", ["ID", "Name", "Status"])
+table = Table("RESULTS")
+table.add_column("ID")
+table.add_column("Name")
+table.add_column("Status")
 table.add_row("001", "Item 1", "Active")
 table.add_row("002", "Item 2", "Inactive")
 table.show()  # F7/F8 to page up/down

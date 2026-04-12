@@ -20,6 +20,7 @@ uv venv && uv pip install -e .
 
 ```python
 from ux3270.dialog import Form
+from ux3270.panel import FieldType
 
 # Create a simple form
 form = Form("USER LOGIN", panel_id="LOGIN01")
